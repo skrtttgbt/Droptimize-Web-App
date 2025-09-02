@@ -1,0 +1,395 @@
+@font-face {
+  font-family: 'LEMON MILK';
+  font-style: normal;
+  font-weight: 400;
+  src:  url('/fonts/LEMONMILK/LEMONMILK-Bold.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-MediumItalic.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-BoldItalic.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-LightItalic.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-Medium.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-Regular.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-Light.woff2') format('woff2'),
+        url('/fonts/LEMONMILK/LEMONMILK-RegularItalic.woff2') format('woff2');
+  font-display: swap;
+}
+
+@font-face {
+    font-family: 'Lexend';
+    font-style: normal;
+    font-weight: 400;
+    src: url('/fonts/Lexend/Lexend-Regular.woff2') format('woff2');
+    font-display: swap;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Lexend', sans-serif;
+  background-color: #f3f4f6;
+  color: #000000;
+}
+
+/* This part styles the landing page for the Droptimize web application */
+/* The landing page includes a header, main content area, and footer */
+
+.landing-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  background-color: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: top 0.3s ease;
+}
+
+.landing-header.hide {
+  top: -100px;
+}
+
+.landing-header.show {
+  top: 0;
+}
+
+.landing-logo {
+  width: 150px;
+}
+
+.landing-logo:hover {
+  cursor: pointer;
+}
+
+.landing-nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.landing-nav-link {
+  font: 600 clamp(0.75rem, 1vw, 1.5rem) 'Lexend', sans-serif;
+  color: #00b2e1;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.3s ease;
+}
+
+.landing-nav-link:hover {
+  color: #ffffff;
+  background-color: #00b2e1;
+}
+
+.landing-auth-buttons {
+  display: flex;
+  gap: clamp(0.5rem, 1vw, 1rem);
+}
+
+.landing-login-button, .landing-signup-button {
+  font: 600 clamp(0.75rem, 1vw, 1.5rem) 'Lexend', sans-serif;
+  color: #ffffff;
+  text-decoration: none;
+  background-color: #00b2e1;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.3s ease;
+}
+
+.landing-login-button:hover, .landing-signup-button:hover {
+  background-color: #0064b5;
+}
+
+/* Welcome content styles for the landing page */
+
+.landing-main {
+  display: flex;
+  text-align: center;
+  flex-direction: column;
+  padding-top: 100px;
+}
+
+.landing-welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  width: 100%;
+}
+
+.landing-welcome-content {
+  width: 100%;
+  max-width: 500px;
+}
+
+.landing-hero-image {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.landing-main-logo {
+  max-width: 600px;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.landing-title {
+  font: 700 clamp(1.75rem, 2vw, 2.5rem) 'LEMON MILK', sans-serif;
+  color: #00b2e1;
+}
+
+.landing-description {
+  font: 400 clamp(1rem, 1vw, 1.25rem) 'Lexend', sans-serif;
+  color: #000000;
+  margin: 1rem 0;
+}
+
+.landing-cta-button {
+  display: inline-block;
+  padding: 1rem 1.5rem;
+  background-image: linear-gradient(#00b2e1, #0064b5);
+  color: #ffffff;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-family: 'LEMON MILK', sans-serif;
+  font-weight: 700;
+  font-size: large;
+  align-content: center;
+  transition: background-image 0.3s ease;
+  &:hover {
+    background-image: linear-gradient(#00b2e1, #00b2e1);
+  }
+}
+
+/* Features section styles for the landing page */
+
+.landing-features {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  background-image: linear-gradient(#00b2e1, #0064b5);
+  color: #ffffff;
+}
+
+.landing-section-title {
+  font-family: 'Lexend', sans-serif;
+  font-weight: 700;
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+
+.landing-feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  color: #000000;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px;
+  width: 300px;
+  height: 400px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+  &:hover {
+    transform: translateY(-5px);
+  }
+}
+
+.feature-card img {
+  width: 200px;
+  margin-bottom: 1rem;
+}
+
+.landing-admin-features, .landing-courier-features {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  max-width: 996px
+}
+
+.back-button-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.back-button {
+  height: 50px;
+  margin-top: 1rem;
+  padding: 0.5rem 1.2rem;
+  border: none;
+  color: #ffffff;
+  background-color: transparent;
+  font: 700 1rem 'Lexend', sans-serif;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.back-button:hover {
+  background-color: #ffffff;
+  color: #00b2e1;
+}
+
+/* About section styles for the landing page */
+
+.landing-about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background-color: #ffffff;
+  height: 50vh;
+}
+
+.landing-about p {
+  width: clamp(300px, 100%, 900px);
+  text-align: center;
+  font-size: clamp(1.125rem, 2vw, 1.25rem);
+  line-height: 1.5;
+}
+
+.landing-about-button {
+  display: inline-block;
+  padding: 1rem 1.5rem;
+  background-image: linear-gradient(#00b2e1, #0064b5);
+  color: #ffffff;
+  border-radius: 0.5rem;
+  border: none;
+  text-decoration: none;
+  font-family: 'LEMON MILK', sans-serif;
+  font-weight: 700;
+  font-size: large;
+  margin-top: 1rem;
+  transition: background-image 0.3s ease;
+  &:hover {
+    background-image: linear-gradient(#00b2e1, #00b2e1);
+    cursor: pointer;
+  }
+}
+
+/* Contact section styles for the landing page */
+
+.landing-contact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  background-color: #f3f4f6;
+}
+
+/* Footer styles for the landing page */
+
+.landing-footer {
+  text-align: center;
+  padding: 1rem 0;
+  background-color: #f3f4f6;
+}
+
+.landing-footer p {
+  font-family: 'Lexend', sans-serif;
+  font-weight: 400;
+  color: #000000;
+}
+
+/* Styles for the admin dashboard */
+
+.navbar-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem;
+  background-color: #ffffff;
+  box-shadow: 3px 0 5px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+.navbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 2rem;
+}
+
+.navbar-logo {
+  width: 200px;
+}
+
+.navbar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.navbar li {
+  width: 100%;
+  &:hover {
+    background-color: #f3f4f6;
+    cursor: pointer;
+  }
+}
+
+.navbar li a {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem 1rem;
+  text-decoration: none;
+  color: transparent;
+  background-image: linear-gradient(to right, #00b2e1, #0064b5);
+  background-clip: text;
+  font: 600 1.25rem 'Lexend', sans-serif;
+  box-sizing: border-box;
+}
+
+.navbar-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.dashboard {
+  display: flex;
+  min-height: 100vh;
+}
+
+.dashboard-main {
+  flex: 1;
+  padding: 0 2rem 1rem 2rem;
+  background-color: #f9f9f9;
+  margin-left: calc(250px + 1rem);
+}
+
+.dashboard-title {
+  font: 700 2.5rem 'Lexend', sans-serif;
+  color: #00b2e1;
+  margin-bottom: 1rem;
+}
