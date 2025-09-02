@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, sendEmailVerification, updateProfile } from "firebase/auth";
-import { doc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore";
+import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendEmailVerification, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -43,4 +43,34 @@ export const registerUser = async (formData) => {
     console.error("Error registering user:", error.message);
     return { success: false, error: error };
   }
+};
+
+export const loginUser = async (email, password) => {
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    localStorage.setItem("user", JSON.stringify(user));
+    return { success: true, user };
+  } catch (error) {
+    console.error("Login error:", error.message);
+    return { success: false, error };
+  }
+};
+
+export const checkAuth = () => {
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      unsubscribe(); 
+      if (user) {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        resolve({
+          authenticated: true,
+          emailVerified: user.emailVerified,
+          user: { ...user, ...userDoc.data() },
+        });
+      } else {
+        resolve({ authenticated: false });
+      }
+    });
+  });
 };

@@ -4,10 +4,16 @@ import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { auth } from "/src/firebaseConfig";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
+import { checkAuth, loginUser } from "../firebaseConfig";
 
 export default function LogInForm() {
   useEffect(() => {
     document.title = "Droptimize - Log In";
+    checkAuth().then(({ authenticated }) => {
+      if (authenticated) {
+        navigate("/dashboard");
+      }
+    });
   }, []);
 
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -24,38 +30,42 @@ export default function LogInForm() {
     setFormData((prev) => ({ ...prev, [name]: value.trimStart() }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    const trimmedData = {
-      email: formData.email.trim(),
-      password: formData.password.trim(),
-    };
+  const trimmedData = {
+    email: formData.email.trim(),
+    password: formData.password.trim(),
+  };
 
-    const newErrors = {};
-    if (!trimmedData.email) newErrors.email = "Email is required";
-    if (!trimmedData.password) newErrors.password = "Password is required";
+  const newErrors = {};
+  if (!trimmedData.email) newErrors.email = "Email is required";
+  if (!trimmedData.password) newErrors.password = "Password is required";
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(trimmedData.email)) {
-      newErrors.email = "Invalid email format";
-    }
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(trimmedData.email)) {
+    newErrors.email = "Invalid email format";
+  }
 
-    if (Object.keys(newErrors).length > 0) {
-      setFieldErrors(newErrors);
-      return;
-    }
+  if (Object.keys(newErrors).length > 0) {
+    setFieldErrors(newErrors);
+    return;
+  }
 
-    setFieldErrors({});
-    setError("");
-    setLoading(true);
+  setFieldErrors({});
+  setError("");
+  setLoading(true);
 
-    try {
-      await signInWithEmailAndPassword(auth, trimmedData.email, trimmedData.password);
+  try {
+    const { success, user, error } = await loginUser(
+      trimmedData.email,
+      trimmedData.password
+    );
+
+    if (success) {
       navigate("/dashboard");
-    } catch (err) {
-      console.error("Login error:", err);
-      const code = err.code || "";
+    } else {
+      const code = error.code || "";
       if (code.includes("user-not-found")) {
         setFieldErrors({ email: "No account found with this email" });
       } else if (code.includes("wrong-password")) {
@@ -63,10 +73,11 @@ export default function LogInForm() {
       } else {
         setError("Login failed. Please try again.");
       }
-    } finally {
-      setLoading(false);
     }
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleForgotPassword = async () => {
     const email = formData.email.trim();

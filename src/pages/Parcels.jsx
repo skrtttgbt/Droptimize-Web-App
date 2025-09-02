@@ -1,7 +1,8 @@
-import { Stack, Typography } from "@mui/material";
+import { Button, Stack, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 import ParcelsHeader from "../components/Dashboard/ParcelsHeader.jsx";
 import ParcelList from "../components/Dashboard/ParcelList.jsx";
+import CSVModal from "./Modals/CSVModal.jsx";
 
 export default function Parcels() {
   useEffect(() => {
@@ -11,11 +12,15 @@ export default function Parcels() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSort, setSelectedSort] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
+  const [openCSVModal, setOpenCSVModal] = useState(false);
 
   const handleSearch = (query) => setSearchQuery(query);
   const handleSort = (sort) => setSelectedSort(sort);
   const handleStatusSelect = (status) => setSelectedStatus(status);
-
+  const handleUpload = (data) => {
+    console.log("Upload to DB:", data);
+    // TODO: Insert to Firestore or your backend here
+  };
   const parcels = [
     {
       id: "PKG001",
@@ -120,6 +125,7 @@ export default function Parcels() {
       </Typography>
 
       <Stack spacing={2}>
+        
         <ParcelsHeader
           showSearch
           showSort
@@ -131,7 +137,19 @@ export default function Parcels() {
             { value: "dateAdded_desc", label: "Newest First" },
           ]}
         />
+      <Button
+        variant="contained"
+        sx={{ bgcolor: "#00b2e1", fontWeight: "bold", width: 200 }}
+        onClick={() => setOpenCSVModal(true)}
+      >
+        Import / Export CSV
+      </Button>
 
+        <CSVModal
+          open={openCSVModal}
+          handleClose={() => setOpenCSVModal(false)}
+          onUpload={handleUpload}
+        />
         <ParcelList parcels={sortedParcels} />
       </Stack>
     </>
