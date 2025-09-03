@@ -2,13 +2,14 @@ import { List, ListItem, ListItemText, ListItemAvatar, Avatar, Typography, Chip,
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 
 const statusColors = {
-  Delivered: "#29bf12",
-  Failed: "#f21b3f",
-  "Out for Delivery": "#ff9914",
-  Pending: "#c4cad0",
+  delivered: "#29bf12",
+  failed: "#f21b3f",
+  returned: "#f21b3f",
+  "out for delivery": "#ff9914",
+  pending: "#c4cad0",
 };
 
-const statusOrder = ["Pending", "Out for Delivery", "Delivered", "Failed"];
+const statusOrder = ["pending", "out for delivery", "delivered", "failed", "returned"];
 
 export default function ParcelList({ parcels = [], loading = false }) {
   // If loading, show skeleton
@@ -59,7 +60,7 @@ export default function ParcelList({ parcels = [], loading = false }) {
         <Box key={parcel.id}>
           <ListItem alignItems="flex-start" sx={{ py: 2 }}>
             <ListItemAvatar>
-              <Avatar sx={{ bgcolor: statusColors[parcel.status] || "#c4cad0" }}>
+              <Avatar sx={{ bgcolor: statusColors[parcel.status?.toLowerCase()] || "#c4cad0" }}>
                 <LocalShippingIcon />
               </Avatar>
             </ListItemAvatar>
@@ -69,7 +70,7 @@ export default function ParcelList({ parcels = [], loading = false }) {
                   label={parcel.status}
                   size="small"
                   sx={{
-                    backgroundColor: statusColors[parcel.status] || "#c4cad0",
+                    backgroundColor: statusColors[parcel.status?.toLowerCase()] || "#c4cad0",
                     color: "#fff",
                     fontSize: "0.75rem",
                   }}

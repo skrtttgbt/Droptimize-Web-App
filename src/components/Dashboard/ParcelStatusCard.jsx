@@ -5,7 +5,7 @@ export default function ParcelStatusCard({ delivered = 0, pending = 0, outForDel
   const data = [
     { id: "Delivered", value: delivered, color: "#29bf12" },
     { id: "Out for Delivery", value: outForDelivery, color: "#ff9914" },
-    { id: "Failed / Returned", value: failedOrReturned, color: "#f21b3f" },
+    { id: "Failed/Returned", value: failedOrReturned, color: "#f21b3f" },
     { id: "Pending", value: pending, color: "#c4cad0" }
   ];
 

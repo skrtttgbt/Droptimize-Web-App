@@ -7,71 +7,24 @@ export const fetchAllParcels = async (uid = null) => {
     const parcels = [];
     
     // If uid is provided, only fetch parcels for that user
-     // Otherwise fetch all parcels (admin view)
-     if (uid) {
-       // Get parcels for specific user ID
-       const userId = uid;
-       
-       // Get all timestamps for this user
-       const timestampsRef = collection(db, `parcels/${userId}`);
-       const timestampsSnapshot = await getDocs(timestampsRef);
-       
-       // Skip if user doesn't have any parcels
-       if (timestampsSnapshot.empty) {
-         return parcels;
-       }
-       
-       // For each timestamp
-       for (const timestampDoc of timestampsSnapshot.docs) {
-         const timestamp = timestampDoc.id;
-         
-         // Get all parcel IDs for this timestamp
-         const parcelIdsRef = collection(db, `parcels/${userId}/${timestamp}`);
-         const parcelIdsSnapshot = await getDocs(parcelIdsRef);
-         
-         // For each parcel ID
-         for (const parcelDoc of parcelIdsSnapshot.docs) {
-           const parcelId = parcelDoc.id;
-           const parcelData = parcelDoc.data();
-           
-           parcels.push({
-             id: parcelId,
-             reference: parcelData.reference || '',
-             status: parcelData.status || 'Pending',
-             recipient: parcelData.recipient || '',
-             address: parcelData.address || '',
-             dateAdded: parcelData.dateAdded?.toDate() || new Date(),
-             userId: userId,
-             timestamp: timestamp
-           });
-         }
-       }
-    } else {
-      // Get all user IDs from parcels collection (admin view)
+    // Otherwise fetch all parcels (admin view)
+    if (uid) {
+      // Get parcels for specific user ID
       const parcelsRef = collection(db, 'parcels');
-      const userIdsSnapshot = await getDocs(parcelsRef);
+      const parcelsSnapshot = await getDocs(parcelsRef);
       
-      // For each user ID
-      for (const userDoc of userIdsSnapshot.docs) {
-        const userId = userDoc.id;
+      // Skip if no parcels exist
+      if (parcelsSnapshot.empty) {
+        return parcels;
+      }
       
-      // Get all timestamps for this user
-      const timestampsRef = collection(db, `parcels/${userId}`);
-      const timestampsSnapshot = await getDocs(timestampsRef);
-      
-      // For each timestamp
-      for (const timestampDoc of timestampsSnapshot.docs) {
-        const timestamp = timestampDoc.id;
+      // For each parcel
+      for (const parcelDoc of parcelsSnapshot.docs) {
+        const parcelId = parcelDoc.id;
+        const parcelData = parcelDoc.data();
         
-        // Get all parcel IDs for this timestamp
-        const parcelIdsRef = collection(db, `parcels/${userId}/${timestamp}`);
-        const parcelIdsSnapshot = await getDocs(parcelIdsRef);
-        
-        // For each parcel ID
-        for (const parcelDoc of parcelIdsSnapshot.docs) {
-          const parcelId = parcelDoc.id;
-          const parcelData = parcelDoc.data();
-          
+        // Only include parcels that belong to this user
+        if (parcelData.uid === uid) {
           parcels.push({
             id: parcelId,
             reference: parcelData.reference || '',
@@ -79,12 +32,30 @@ export const fetchAllParcels = async (uid = null) => {
             recipient: parcelData.recipient || '',
             address: parcelData.address || '',
             dateAdded: parcelData.dateAdded?.toDate() || new Date(),
-            userId: userId,
-            timestamp: timestamp
+            userId: uid
           });
         }
       }
-    }
+    } else {
+      // Admin view - get all parcels
+      const parcelsRef = collection(db, 'parcels');
+      const parcelsSnapshot = await getDocs(parcelsRef);
+      
+      // For each parcel
+      for (const parcelDoc of parcelsSnapshot.docs) {
+        const parcelId = parcelDoc.id;
+        const parcelData = parcelDoc.data();
+        
+        parcels.push({
+          id: parcelId,
+          reference: parcelData.reference || '',
+          status: parcelData.status || 'Pending',
+          recipient: parcelData.recipient || '',
+          address: parcelData.address || '',
+          dateAdded: parcelData.dateAdded?.toDate() || new Date(),
+          userId: parcelData.uid || ''
+        });
+      }
     }
     
     return parcels;
@@ -102,95 +73,40 @@ export const fetchParcelStatusData = async (uid = null) => {
     let failedOrReturned = 0;
     let pending = 0;
     
-    // If uid is provided, only fetch parcels for that user
-    // Otherwise fetch all parcels (admin view)
-    if (uid) {
-      // Get parcels for specific user ID
-      const userId = uid;
-      
-      // Get all timestamps for this user
-      const timestampsRef = collection(db, `parcels/${userId}`);
-      const timestampsSnapshot = await getDocs(timestampsRef);
-      
-      // Skip if user doesn't have any parcels
-      if (timestampsSnapshot.empty) {
-        return { delivered: 0, outForDelivery: 0, failedOrReturned: 0, pending: 0, total: 0 };
-      }
-      
-      // For each timestamp
-      for (const timestampDoc of timestampsSnapshot.docs) {
-        const timestamp = timestampDoc.id;
-        
-        // Get all parcel IDs for this timestamp
-        const parcelIdsRef = collection(db, `parcels/${userId}/${timestamp}`);
-        const parcelIdsSnapshot = await getDocs(parcelIdsRef);
-        
-        // For each parcel ID
-        for (const parcelDoc of parcelIdsSnapshot.docs) {
-          const parcelData = parcelDoc.data();
-          
-          switch(parcelData.status?.toLowerCase()) {
-            case 'delivered':
-              delivered++;
-              break;
-            case 'out for delivery':
-              outForDelivery++;
-              break;
-            case 'failed':
-            case 'returned':
-              failedOrReturned++;
-              break;
-            case 'pending':
-            default:
-              pending++;
-              break;
-          }
-        }
-      }
-    } else {
-      // Get all user IDs from parcels collection (admin view)
-      const parcelsRef = collection(db, 'parcels');
-      const userIdsSnapshot = await getDocs(parcelsRef);
-      
-      // For each user ID
-      for (const userDoc of userIdsSnapshot.docs) {
-        const userId = userDoc.id;
-      
-      // Get all timestamps for this user
-      const timestampsRef = collection(db, `parcels/${userId}`);
-      const timestampsSnapshot = await getDocs(timestampsRef);
-      
-      // For each timestamp
-      for (const timestampDoc of timestampsSnapshot.docs) {
-        const timestamp = timestampDoc.id;
-        
-        // Get all parcel IDs for this timestamp
-        const parcelIdsRef = collection(db, `parcels/${userId}/${timestamp}`);
-        const parcelIdsSnapshot = await getDocs(parcelIdsRef);
-        
-        // For each parcel ID
-        for (const parcelDoc of parcelIdsSnapshot.docs) {
-          const parcelData = parcelDoc.data();
-          
-          switch(parcelData.status?.toLowerCase()) {
-            case 'delivered':
-              delivered++;
-              break;
-            case 'out for delivery':
-              outForDelivery++;
-              break;
-            case 'failed':
-            case 'returned':
-              failedOrReturned++;
-              break;
-            case 'pending':
-            default:
-              pending++;
-              break;
-          }
-        }
-      }
+    // Get all parcels
+    const parcelsRef = collection(db, 'parcels');
+    const parcelsSnapshot = await getDocs(parcelsRef);
+    console.log(parcelsSnapshot)
+    // Skip if no parcels exist
+    if (parcelsSnapshot.empty) {
+      return { delivered: 0, outForDelivery: 0, failedOrReturned: 0, pending: 0, total: 0 };
     }
+    
+    // For each parcel
+    for (const parcelDoc of parcelsSnapshot.docs) {
+      const parcelData = parcelDoc.data();
+      
+      // If uid is provided, only count parcels for that user
+      if (uid && parcelData.uid !== uid) {
+        continue; // Skip parcels that don't belong to this user
+      }
+      consosle.log(parcelData)
+      switch(parcelData.status?.toLowerCase()) {
+        case 'delivered':
+          delivered++;
+          break;
+        case 'Out for Delivery':
+          outForDelivery++;
+          break;
+        case 'failed':
+        case 'returned':
+          failedOrReturned++;
+          break;
+        case 'Pending':
+        default:
+          pending++;
+          break;
+      }
     }
     
     return { 
@@ -223,6 +139,7 @@ export const addParcel = async (parcelData, uid) => {
     
     // Format the data to be stored
     const dataToStore = {
+      uid: uid,
       reference: parcelData.reference || '',
       status: parcelData.status || 'Pending',
       recipient: parcelData.recipient || '',
@@ -232,7 +149,7 @@ export const addParcel = async (parcelData, uid) => {
     };
     
     // Set the document at the nested path
-    const parcelDocRef = doc(db, `parcels/${uid}/${timestamp}/${parcelId}`);
+    const parcelDocRef = doc(db, `parcels/${parcelId}`);
     await setDoc(parcelDocRef, dataToStore);
     
     return {
@@ -251,11 +168,11 @@ export const addParcel = async (parcelData, uid) => {
 };
 
 // Update an existing parcel in the database
-// Requires the complete path information: uid, timestamp, and parcelId
-export const updateParcel = async (parcelData, uid, timestamp, parcelId) => {
+// Requires only the parcelId
+export const updateParcel = async (parcelData, parcelId) => {
   try {
-    if (!uid || !timestamp || !parcelId) {
-      throw new Error('User ID, timestamp, and parcel ID are required to update a parcel');
+    if (!parcelId) {
+      throw new Error('Parcel ID is required to update a parcel');
     }
     
     // Format the data to be updated
@@ -277,15 +194,13 @@ export const updateParcel = async (parcelData, uid, timestamp, parcelId) => {
       }
     });
     
-    // Set the document at the nested path
-    const parcelDocRef = doc(db, `parcels/${uid}/${timestamp}/${parcelId}`);
+    // Set the document at the path
+    const parcelDocRef = doc(db, `parcels/${parcelId}`);
     await setDoc(parcelDocRef, dataToUpdate, { merge: true });
     
     return {
       success: true,
-      id: parcelId,
-      timestamp: timestamp,
-      userId: uid
+      id: parcelId
     };
   } catch (error) {
     console.error('Error updating parcel:', error);
@@ -297,15 +212,15 @@ export const updateParcel = async (parcelData, uid, timestamp, parcelId) => {
 };
 
 // Delete a parcel from the database
-// Requires the complete path information: uid, timestamp, and parcelId
-export const deleteParcel = async (uid, timestamp, parcelId) => {
+// Requires the parcelId
+export const deleteParcel = async (parcelId) => {
   try {
-    if (!uid || !timestamp || !parcelId) {
-      throw new Error('User ID, timestamp, and parcel ID are required to delete a parcel');
+    if (!parcelId) {
+      throw new Error('Parcel ID is required to delete a parcel');
     }
     
     // Reference to the parcel document
-    const parcelDocRef = doc(db, `parcels/${uid}/${timestamp}/${parcelId}`);
+    const parcelDocRef = doc(db, `parcels/${parcelId}`);
     
     // Delete the document
     await deleteDoc(parcelDocRef);
@@ -323,16 +238,16 @@ export const deleteParcel = async (uid, timestamp, parcelId) => {
   }
 };
 
-// Get a single parcel by its path components
-// Requires the complete path information: uid, timestamp, and parcelId
-export const getParcel = async (uid, timestamp, parcelId) => {
+// Get a single parcel by its ID
+// Requires only the parcelId
+export const getParcel = async (parcelId) => {
   try {
-    if (!uid || !timestamp || !parcelId) {
-      throw new Error('User ID, timestamp, and parcel ID are required to get a parcel');
+    if (!parcelId) {
+      throw new Error('Parcel ID is required to get a parcel');
     }
     
     // Reference to the parcel document
-    const parcelDocRef = doc(db, `parcels/${uid}/${timestamp}/${parcelId}`);
+    const parcelDocRef = doc(db, `parcels/${parcelId}`);
     
     // Get the document
     const parcelDoc = await getDoc(parcelDocRef);
@@ -355,8 +270,7 @@ export const getParcel = async (uid, timestamp, parcelId) => {
         recipient: parcelData.recipient || '',
         address: parcelData.address || '',
         dateAdded: parcelData.dateAdded?.toDate() || new Date(),
-        userId: uid,
-        timestamp: timestamp
+        userId: parcelData.uid || ''
       }
     };
   } catch (error) {

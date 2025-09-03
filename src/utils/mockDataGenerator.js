@@ -1,5 +1,6 @@
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import { getNextParcelId } from '../services/firebaseService';
 
 // Generate random parcels
 export const generateMockParcels = async (count = 50, uid = 'admin') => {
@@ -8,17 +9,20 @@ export const generateMockParcels = async (count = 50, uid = 'admin') => {
   try {
     for (let i = 0; i < count; i++) {
       const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
-      const parcelId = `PKG${String(i + 1001).padStart(4, '0')}`;
+      // Get a sequential parcel ID
+      const parcelId = await getNextParcelId();
       
-      // Use the new path format: parcels/$user.uid/package/parcel_id/data
-      const parcelDocRef = doc(db, `parcels/${uid}/package/${parcelId}/data`);
+      // Use the new path format: parcels/parcelId
+      const parcelDocRef = doc(db, `parcels/${parcelId}`);
       
       await setDoc(parcelDocRef, {
+        uid: uid,
         reference: `REF-${Math.floor(Math.random() * 1000000)}`,
         status: randomStatus,
         recipient: `Customer ${i + 1}`,
         address: `${i + 1} Sample St, City`,
-        dateAdded: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000))
+        dateAdded: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000)),
+        createdAt: Timestamp.fromDate(new Date())
       });
     }
     console.log(`Successfully generated ${count} mock parcels`);
