@@ -1,94 +1,112 @@
-import { Button, Stack, Typography } from "@mui/material";
+import { Button, Stack, Typography, CircularProgress, Box } from "@mui/material";
 import { useEffect, useState } from "react";
 import ParcelsHeader from "../components/Dashboard/ParcelsHeader.jsx";
 import ParcelList from "../components/Dashboard/ParcelList.jsx";
 import CSVModal from "./Modals/CSVModal.jsx";
+import { fetchAllParcels } from "../services/firebaseService.js";
+import { auth } from "../firebaseConfig.js";
 
 export default function Parcels() {
   useEffect(() => {
     document.title = "Manage Parcels";
+    
+    // Fetch parcels data when component mounts
+    const fetchParcels = async () => {
+      setLoading(true);
+      try {
+        // Get current user's UID
+        const currentUser = auth.currentUser;
+        const uid = currentUser ? currentUser.uid : null;
+        
+        // Fetch parcels for the current user
+        const parcelData = await fetchAllParcels(uid);
+        setParcels(parcelData);
+      } catch (error) {
+        console.error("Error fetching parcels:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchParcels();
   }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSort, setSelectedSort] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
   const [openCSVModal, setOpenCSVModal] = useState(false);
+  const [parcels, setParcels] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch parcels from Firebase
+  useEffect(() => {
+    const loadParcels = async () => {
+      setLoading(true);
+      try {
+        // Get current user's UID
+        const currentUser = auth.currentUser;
+        const uid = currentUser ? currentUser.uid : null;
+        
+        // Fetch parcels for the current user
+        const parcelData = await fetchAllParcels(uid);
+        setParcels(parcelData);
+      } catch (error) {
+        console.error("Error loading parcels:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadParcels();
+  }, []);
 
   const handleSearch = (query) => setSearchQuery(query);
   const handleSort = (sort) => setSelectedSort(sort);
   const handleStatusSelect = (status) => setSelectedStatus(status);
-  const handleUpload = (data) => {
-    console.log("Upload to DB:", data);
-    // TODO: Insert to Firestore or your backend here
+  const handleUpload = async () => {
+    // Refresh parcels list after upload
+    setLoading(true);
+    try {
+      // Get current user's UID
+      const currentUser = auth.currentUser;
+      const uid = currentUser ? currentUser.uid : null;
+      
+      // Fetch parcels for the current user
+      const parcelData = await fetchAllParcels(uid);
+      setParcels(parcelData);
+    } catch (error) {
+      console.error("Error refreshing parcels:", error);
+    } finally {
+      setLoading(false);
+    }
   };
-  const parcels = [
-    {
-      id: "PKG001",
-      reference: "REF-982312",
-      status: "Pending",
-      recipient: "Juan Dela Cruz",
-      address: "123 Rizal Ave, Manila",
-      dateAdded: "2024-06-01T10:00:00Z"
-    },
-    {
-      id: "PKG002",
-      reference: "REF-234812",
-      status: "Delivered",
-      recipient: "Maria Santos",
-      address: "456 Mabini St, Quezon City",
-      dateAdded: "2024-06-02T12:30:00Z"
-    },
-    {
-      id: "PKG003",
-      reference: "REF-789134",
-      status: "Out for Delivery",
-      recipient: "Carlos Reyes",
-      address: "789 Bonifacio Blvd, Taguig",
-      dateAdded: "2024-06-04T09:00:00Z"
-    },
-    {
-      id: "PKG004",
-      reference: "REF-005612",
-      status: "Failed",
-      recipient: "Ana Lopez",
-      address: "22 Ayala Ave, Makati",
-      dateAdded: "2024-06-03T11:00:00Z"
-    },
-    {
-      id: "PKG005",
-      reference: "REF-673419",
-      status: "Delivered",
-      recipient: "Jose Ramos",
-      address: "35 Katipunan Rd, Marikina",
-      dateAdded: "2024-06-01T14:00:00Z"
-    },
-    {
-      id: "PKG006",
-      reference: "REF-556421",
-      status: "Pending",
-      recipient: "Liza Garcia",
-      address: "88 Taft Ave, Pasay",
-      dateAdded: "2024-06-06T15:45:00Z"
-    },
-    {
-      id: "PKG007",
-      reference: "REF-902831",
-      status: "Out for Delivery",
-      recipient: "Nico Cruz",
-      address: "12 Ortigas Ext, Pasig",
-      dateAdded: "2024-06-05T10:20:00Z"
-    },
-  ];
 
-  const filteredBySearch = parcels.filter(parcel =>
-    parcel.recipient.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    parcel.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    parcel.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (parcel.dateAdded && new Date(parcel.dateAdded).toLocaleDateString().includes(searchQuery))
-  );
+  const filteredBySearch = searchQuery ? parcels.filter(parcel => {
+    const query = searchQuery.toLowerCase();
+    
+    // Format date for search, handling different date formats from Firestore
+    let formattedDate = "";
+    if (parcel.dateAdded) {
+      if (parcel.dateAdded instanceof Date) {
+        formattedDate = parcel.dateAdded.toLocaleDateString().toLowerCase();
+      } else if (typeof parcel.dateAdded.toDate === 'function') {
+        formattedDate = parcel.dateAdded.toDate().toLocaleDateString().toLowerCase();
+      } else {
+        formattedDate = new Date(parcel.dateAdded).toLocaleDateString().toLowerCase();
+      }
+    }
+    
+    return (
+      (parcel.recipient && parcel.recipient.toLowerCase().includes(query)) ||
+      (parcel.id && parcel.id.toLowerCase().includes(query)) ||
+      (parcel.reference && parcel.reference.toLowerCase().includes(query)) ||
+      (parcel.address && parcel.address.toLowerCase().includes(query)) ||
+      formattedDate.includes(query)
+    );
+  }) : parcels;
 
   const filteredByStatus = selectedStatus
-    ? filteredBySearch.filter(p => p.status === selectedStatus)
+    ? filteredBySearch.filter(p => p.status && p.status.toLowerCase() === selectedStatus.toLowerCase())
     : filteredBySearch;
 
   const sortedParcels = [...filteredByStatus].sort((a, b) => {
@@ -137,20 +155,46 @@ export default function Parcels() {
             { value: "dateAdded_desc", label: "Newest First" },
           ]}
         />
-      <Button
-        variant="contained"
-        sx={{ bgcolor: "#00b2e1", fontWeight: "bold", width: 200 }}
-        onClick={() => setOpenCSVModal(true)}
-      >
-        Import / Export CSV
-      </Button>
+      <Stack direction="row" spacing={2}>
+        <Button
+          variant="contained"
+          sx={{ bgcolor: "#00b2e1", fontWeight: "bold", width: 200 }}
+          onClick={() => setOpenCSVModal(true)}
+        >
+          Import / Export CSV
+        </Button>
+        <Button
+          variant="outlined"
+          sx={{ fontWeight: "bold", width: 120 }}
+          onClick={handleUpload}
+          disabled={loading}
+        >
+          Refresh
+        </Button>
+      </Stack>
 
         <CSVModal
           open={openCSVModal}
           handleClose={() => setOpenCSVModal(false)}
           onUpload={handleUpload}
         />
-        <ParcelList parcels={sortedParcels} />
+        
+        {loading ? (
+          <Box textAlign="center" my={4}>
+            <CircularProgress />
+            <Typography variant="body1" sx={{ mt: 2 }}>
+              Loading parcels...
+            </Typography>
+          </Box>
+        ) : parcels.length === 0 ? (
+          <Box textAlign="center" my={4}>
+            <Typography variant="h6" color="text.secondary">
+              No parcels found. Import some parcels to get started.
+            </Typography>
+          </Box>
+        ) : (
+          <ParcelList parcels={sortedParcels} loading={loading} />
+        )}
       </Stack>
     </>
   );

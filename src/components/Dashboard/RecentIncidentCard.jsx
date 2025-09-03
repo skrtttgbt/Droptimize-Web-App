@@ -1,4 +1,4 @@
-import { Paper, Typography, List, ListItem, ListItemText } from "@mui/material"
+import { Paper, Typography, List, ListItem, ListItemText, Box, Chip } from "@mui/material";
 
 export default function RecentIncidentCard({ incidents = [] }) {
   return (
@@ -6,16 +6,42 @@ export default function RecentIncidentCard({ incidents = [] }) {
       <Typography variant="h6" gutterBottom>
         Recent Incidents
       </Typography>
-      <List>
-        {incidents.map((incident, index) => (
-          <ListItem key={index}>
-            <ListItemText
-              primary={`Incident ${index + 1}`}
-              secondary={`Date: ${incident.date}, Location: ${incident.location}`}
-            />
-          </ListItem>
-        ))}
-      </List>
+      
+      {incidents.length === 0 ? (
+        <Box sx={{ textAlign: 'center', py: 2, color: 'text.secondary' }}>
+          <Typography variant="body2">No recent incidents recorded</Typography>
+        </Box>
+      ) : (
+        <List>
+          {incidents.map((incident, index) => (
+            <ListItem key={incident.id || index} divider={index < incidents.length - 1}>
+              <ListItemText
+                primary={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="subtitle2">{incident.driverName}</Typography>
+                    <Chip 
+                      size="small" 
+                      color="error" 
+                      label={`${incident.speed} km/h`} 
+                      sx={{ height: 20 }}
+                    />
+                  </Box>
+                }
+                secondary={
+                  <>
+                    <Typography variant="body2" component="span">
+                      {incident.date}
+                    </Typography>
+                    <Typography variant="body2" component="span" sx={{ display: 'block' }}>
+                      {incident.location}
+                    </Typography>
+                  </>
+                }
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
     </Paper>
   );
 }

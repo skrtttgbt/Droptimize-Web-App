@@ -14,9 +14,10 @@ import {
 } from "@mui/material";
 import { CSVLink } from "react-csv";
 import Papa from "papaparse";
-import { addDoc, collection, doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { serverTimestamp } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { db } from "../../firebaseConfig";
+import { addParcel } from "../../services/firebaseService";
 
 export default function CSVModal({ open, handleClose, onUpload }) {
   const [csvData, setCsvData] = useState([]);
@@ -24,22 +25,24 @@ export default function CSVModal({ open, handleClose, onUpload }) {
 
   // CSV Template Headers
   const headers = [
-    { label: "ID", key: "id" },
     { label: "Reference", key: "reference" },
     { label: "Status", key: "status" },
     { label: "Recipient", key: "recipient" },
     { label: "Address", key: "address" },
-    { label: "Date Added", key: "dateAdded" },
   ];
 
   const templateData = [
     {
-      id: "PKG001",
       reference: "REF-123456",
       status: "Pending",
       recipient: "Juan Dela Cruz",
       address: "123 Sample St, Manila",
-      dateAdded: "2024-06-01T10:00:00Z",
+    },
+    {
+      reference: "REF-789012",
+      status: "Out for Delivery",
+      recipient: "Maria Santos",
+      address: "456 Example Ave, Quezon City",
     },
   ];
 
@@ -52,24 +55,42 @@ const handleSaveToFirebase = async () => {
       return;
     }
 
-    // create timestamp collection name
-    const timestampId = Date.now().toString();
+    // Track success and failures
+    let successCount = 0;
+    let failureCount = 0;
 
-    // reference: parcels/{user.uid}/{timestampId}
-    const rowsRef = collection(db, "parcels", user.uid, timestampId);
-
-    // add each row
+    // Add each row using the new addParcel function
     for (const row of csvData) {
-      await addDoc(rowsRef, {
-        ...row,
-        uid: user.uid,
-        createdAt: serverTimestamp(),
-      });
+      const parcelData = {
+        reference: row.reference || "",
+        status: row.status || "Pending",
+        recipient: row.recipient || "",
+        address: row.address || "",
+        dateAdded: serverTimestamp()
+      };
+
+      const result = await addParcel(parcelData, user.uid);
+      
+      if (result.success) {
+        successCount++;
+      } else {
+        failureCount++;
+        console.error("Error adding parcel:", result.error);
+      }
     }
 
-    alert("CSV data successfully uploaded to Firebase!");
+    if (failureCount > 0) {
+      alert(`CSV data upload completed with ${successCount} successes and ${failureCount} failures. Check console for details.`);
+    } else {
+      alert("CSV data successfully uploaded to Firebase!");
+    }
+    
     setCsvData([]);
     setShowAll(false);
+    
+    // Call onUpload callback to refresh the parcels list
+    if (onUpload) onUpload();
+    
     handleClose();
   } catch (error) {
     console.error("Error uploading CSV:", error);
@@ -87,17 +108,14 @@ const handleFileUpload = (e) => {
     skipEmptyLines: true,
     complete: (result) => {
       const normalized = result.data.map((row) => ({
-        id: row["ID"] || row["id"] || "",
         reference: row["Reference"] || row["reference"] || "",
-        status: row["Status"] || row["status"] || "",
+        status: row["Status"] || row["status"] || "Pending",
         recipient: row["Recipient"] || row["recipient"] || "",
         address: row["Address"] || row["address"] || "",
-        dateAdded: row["Date Added"] || row["dateAdded"] || "",
       }));
 
       console.log("Normalized CSV Data:", normalized);
       setCsvData(normalized);
-      if (onUpload) onUpload(normalized);
     },
   });
 };
@@ -184,6 +202,23 @@ const handleFileUpload = (e) => {
                 </TableBody>
               </Table>
                   <Box textAlign="center" sx={{ p: 2 }}>
+                    <Button
+                      onClick={handleClose}
+                      color="primary"
+                      variant="outlined"
+                      sx={{ mr: 1 }}
+                    >
+                      Cancel
+                    </Button>
+                    <CSVLink
+                      data={templateData}
+                      headers={headers}
+                      filename="parcel-template.csv"
+                      className="MuiButtonBase-root MuiButton-root MuiButton-text MuiButton-textPrimary"
+                      style={{ textDecoration: 'none', margin: '0 10px' }}
+                    >
+                      Download Template
+                    </CSVLink>
                     <Button
                       variant="contained"
                       color="success"

@@ -1,4 +1,4 @@
-import { List, ListItem, ListItemText, ListItemAvatar, Avatar, Typography, Chip, Divider, Box } from "@mui/material";
+import { List, ListItem, ListItemText, ListItemAvatar, Avatar, Typography, Chip, Divider, Box, Skeleton } from "@mui/material";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 
 const statusColors = {
@@ -10,7 +10,35 @@ const statusColors = {
 
 const statusOrder = ["Pending", "Out for Delivery", "Delivered", "Failed"];
 
-export default function ParcelList({ parcels = [] }) {
+export default function ParcelList({ parcels = [], loading = false }) {
+  // If loading, show skeleton
+  if (loading) {
+    return (
+      <List sx={{ width: "100%", bgcolor: "background.paper" }}>
+        {[1, 2, 3].map((item) => (
+          <Box key={item}>
+            <ListItem alignItems="flex-start" sx={{ py: 2 }}>
+              <ListItemAvatar>
+                <Skeleton variant="circular" width={40} height={40} />
+              </ListItemAvatar>
+              <ListItemText
+                primary={<Skeleton variant="text" width={100} />}
+                secondary={
+                  <Box>
+                    <Skeleton variant="text" width="90%" />
+                    <Skeleton variant="text" width="80%" />
+                    <Skeleton variant="text" width="70%" />
+                  </Box>
+                }
+              />
+            </ListItem>
+            {item < 3 && <Divider variant="inset" component="li" />}
+          </Box>
+        ))}
+      </List>
+    );
+  }
+  
   // If no parcels are provided, show a message
   if (parcels.length === 0) {
     return (
@@ -69,7 +97,11 @@ export default function ParcelList({ parcels = [] }) {
                   )}
                   {parcel.dateAdded && (
                     <Typography variant="body2" color="text.secondary">
-                      Date Added: {new Date(parcel.dateAdded).toLocaleDateString()}
+                      Date Added: {parcel.dateAdded instanceof Date 
+                        ? parcel.dateAdded.toLocaleDateString() 
+                        : typeof parcel.dateAdded.toDate === 'function'
+                          ? parcel.dateAdded.toDate().toLocaleDateString()
+                          : new Date(parcel.dateAdded).toLocaleDateString()}
                     </Typography>
                   )}
                 </>
