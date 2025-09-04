@@ -7,29 +7,52 @@ import { fetchAllParcels } from "../services/firebaseService.js";
 import { auth } from "../firebaseConfig.js";
 
 export default function Parcels() {
-  useEffect(() => {
-    document.title = "Manage Parcels";
-    
-    // Fetch parcels data when component mounts
-    const fetchParcels = async () => {
-      setLoading(true);
-      try {
-        // Get current user's UID
-        const currentUser = auth.currentUser;
-        const uid = currentUser ? currentUser.uid : null;
-        
-        // Fetch parcels for the current user
-        const parcelData = await fetchAllParcels(uid);
-        setParcels(parcelData);
-      } catch (error) {
-        console.error("Error fetching parcels:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchParcels();
-  }, []);
+  const [counts, setCounts ] = useState({          
+          all: 0,
+          pending: 0,
+          delivered: 0,
+          outForDelivery: 0,
+          failed: 0,})
+
+useEffect(() => {
+  document.title = "Manage Parcels";
+
+  const fetchParcels = async () => {
+    setLoading(true);
+    try {
+      const currentUser = auth.currentUser;
+      const uid = currentUser ? currentUser.uid : null;
+
+      const parcelData = await fetchAllParcels(uid);
+      setParcels(parcelData);
+      const newCounts = {
+        all: parcelData.length,
+        pending: 0,
+        delivered: 0,
+        outForDelivery: 0,
+        failed: 0,
+      };
+
+      parcelData.forEach((parcel) => {
+        const status = (parcel.status || "pending").toLowerCase();
+        if (status === "delivered") newCounts.delivered++;
+        else if (status === "out for delivery") newCounts.outForDelivery++;
+        else if (status === "failed" || status === "returned") newCounts.failed++;
+        else newCounts.pending++;
+      });
+
+      setCounts(newCounts);
+      console.log("Updated Counts:", newCounts);
+
+    } catch (error) {
+      console.error("Error fetching parcels:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchParcels();
+}, []);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSort, setSelectedSort] = useState("");
@@ -127,6 +150,7 @@ export default function Parcels() {
     if (aVal > bVal) return direction === "asc" ? 1 : -1;
     return 0;
   });
+  
 
   return (
     <>
@@ -154,6 +178,8 @@ export default function Parcels() {
             { value: "dateAdded_asc", label: "Oldest First" },
             { value: "dateAdded_desc", label: "Newest First" },
           ]}
+          
+          counts={counts}
         />
       <Stack direction="row" spacing={2}>
         <Button

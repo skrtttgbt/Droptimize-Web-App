@@ -1,5 +1,6 @@
 import { List, ListItem, ListItemText, ListItemAvatar, Avatar, Typography, Chip, Divider, Box, Skeleton } from "@mui/material";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import { useEffect } from "react";
 
 const statusColors = {
   delivered: "#29bf12",
@@ -13,6 +14,9 @@ const statusOrder = ["pending", "out for delivery", "delivered", "failed", "retu
 
 export default function ParcelList({ parcels = [], loading = false }) {
   // If loading, show skeleton
+  useEffect(()=>{
+    console.log(parcels)
+  },[])
   if (loading) {
     return (
       <List sx={{ width: "100%", bgcolor: "background.paper" }}>

@@ -1,29 +1,21 @@
 import { collection, getDocs, query, where, orderBy, limit, doc, setDoc, Timestamp, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
-// Fetch all parcels
 export const fetchAllParcels = async (uid = null) => {
   try {
     const parcels = [];
-    
-    // If uid is provided, only fetch parcels for that user
-    // Otherwise fetch all parcels (admin view)
     if (uid) {
-      // Get parcels for specific user ID
       const parcelsRef = collection(db, 'parcels');
       const parcelsSnapshot = await getDocs(parcelsRef);
       
-      // Skip if no parcels exist
       if (parcelsSnapshot.empty) {
         return parcels;
       }
       
-      // For each parcel
       for (const parcelDoc of parcelsSnapshot.docs) {
         const parcelId = parcelDoc.id;
         const parcelData = parcelDoc.data();
         
-        // Only include parcels that belong to this user
         if (parcelData.uid === uid) {
           parcels.push({
             id: parcelId,
@@ -37,11 +29,9 @@ export const fetchAllParcels = async (uid = null) => {
         }
       }
     } else {
-      // Admin view - get all parcels
       const parcelsRef = collection(db, 'parcels');
       const parcelsSnapshot = await getDocs(parcelsRef);
-      
-      // For each parcel
+
       for (const parcelDoc of parcelsSnapshot.docs) {
         const parcelId = parcelDoc.id;
         const parcelData = parcelDoc.data();
@@ -65,44 +55,40 @@ export const fetchAllParcels = async (uid = null) => {
   }
 };
 
-// Fetch parcel data with status counts
 export const fetchParcelStatusData = async (uid = null) => {
   try {
     let delivered = 0;
     let outForDelivery = 0;
     let failedOrReturned = 0;
     let pending = 0;
-    
-    // Get all parcels
+
     const parcelsRef = collection(db, 'parcels');
     const parcelsSnapshot = await getDocs(parcelsRef);
     console.log(parcelsSnapshot)
-    // Skip if no parcels exist
+
     if (parcelsSnapshot.empty) {
       return { delivered: 0, outForDelivery: 0, failedOrReturned: 0, pending: 0, total: 0 };
     }
     
-    // For each parcel
     for (const parcelDoc of parcelsSnapshot.docs) {
       const parcelData = parcelDoc.data();
-      
-      // If uid is provided, only count parcels for that user
+      console.log()
       if (uid && parcelData.uid !== uid) {
-        continue; // Skip parcels that don't belong to this user
+        continue; 
       }
-      consosle.log(parcelData)
+      console.log(parcelData.status.toLowerCase())
       switch(parcelData.status?.toLowerCase()) {
         case 'delivered':
           delivered++;
           break;
-        case 'Out for Delivery':
+        case 'out for delivery':
           outForDelivery++;
           break;
         case 'failed':
         case 'returned':
           failedOrReturned++;
           break;
-        case 'Pending':
+        case 'pending':
         default:
           pending++;
           break;
