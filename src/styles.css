@@ -12,6 +12,19 @@
         url('/fonts/LEMONMILK/LEMONMILK-RegularItalic.woff2') format('woff2');
   font-display: swap;
 }
+.custom-marker {
+  position: relative;
+  cursor: pointer;
+}
+
+.marker-tooltip {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.custom-marker:hover .marker-tooltip {
+  opacity: 1;
+}
 
 @font-face {
     font-family: 'Lexend';

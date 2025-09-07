@@ -7,12 +7,11 @@ import GiveWarningButton from "./GiveWarningButton.jsx";
 export default function DriverListPanel({ onDriverSelect, onGiveWarning }) {
   const [drivers, setDrivers] = useState([]);
 
-  // Fetch delivering drivers
   useEffect(() => {
     const q = query(
       collection(db, "users"),
       where("role", "==", "driver"),
-      where("status", "==", "Delivering") // ✅ only fetch delivering drivers
+      where("status", "==", "Delivering")
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
@@ -21,7 +20,6 @@ export default function DriverListPanel({ onDriverSelect, onGiveWarning }) {
         ...doc.data(),
       }));
 
-      // sort: overspeeding drivers first
       const sorted = data.sort((a, b) => {
         const aOver = a.speed > (a.speedLimit || 60);
         const bOver = b.speed > (b.speedLimit || 60);
