@@ -1,71 +1,86 @@
 import { useEffect, useState, useMemo } from "react";
 import { Stack, Typography, CircularProgress } from "@mui/material";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "/src/firebaseConfig";
+import { collection, query, where, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { auth, db } from "/src/firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
 import DriversHeader from "../components/Dashboard/DriversHeader.jsx";
 import DriverList from "../components/Dashboard/DriverList.jsx";
 
 export default function Drivers() {
-  useEffect(() => {
-    document.title = "Drivers";
-  }, []);
-
+  const [user, setUser] = useState(null);
+  const [branchId, setBranchId] = useState(null);
   const [allDrivers, setAllDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // UI controls
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
 
+  // 1️⃣ Listen for auth state
   useEffect(() => {
-    const q = query(collection(db, "users"), where("role", "==", "driver"));
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const driverData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setAllDrivers(driverData);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error fetching drivers:", err);
-        setLoading(false);
-      }
-    );
-
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
-  const counts = useMemo(() => {
-    const all = allDrivers.length;
-    const available = allDrivers.filter((d) => (d.status || "").toLowerCase() === "available").length;
-    const delivering = allDrivers.filter((d) => (d.status || "").toLowerCase() === "delivering").length;
-    const offline = allDrivers.filter((d) => (d.status || "").toLowerCase() === "offline").length;
-    return { all, available, delivering, offline };
-  }, [allDrivers]);
+  // 2️⃣ Fetch branchId of current auth user
+  useEffect(() => {
+    if (!user) return;
 
-  const getDisplayName = (d) => {
-    if (d.name) return d.name;
-    const first = d.firstName || "";
-    const last = d.lastName || "";
-    return `${first} ${last}`.trim() || "Unnamed Driver";
-  };
+    const fetchBranchId = async () => {
+      const userDocRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setBranchId(data.branchId || null);
+      }
+    };
+
+    fetchBranchId();
+  }, [user]);
+
+  // 3️⃣ Listen for drivers with same branch
+  useEffect(() => {
+    if (!branchId) return;
+
+    const q = query(
+      collection(db, "users"),
+      where("role", "==", "driver"),
+      where("branchId", "==", branchId)
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const driverData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setAllDrivers(driverData);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+
+    return () => unsub();
+  }, [branchId]);
+
+  const getDisplayName = (d) =>
+    `${d.firstName || ""} ${d.lastName || ""}`.trim() || "Unnamed Driver";
 
   const filteredDrivers = useMemo(() => {
-    let result = allDrivers.slice();
+    let result = [...allDrivers];
+    const q = searchQuery.trim().toLowerCase();
 
-    // search (name or id)
-    const q = (searchQuery || "").trim().toLowerCase();
     if (q) {
-      result = result.filter((d) => {
-        const name = getDisplayName(d).toLowerCase();
-        const id = (d.id || "").toLowerCase();
-        return name.includes(q) || id.includes(q);
-      });
+      result = result.filter(
+        (d) =>
+          getDisplayName(d).toLowerCase().includes(q) ||
+          (d.id || "").toLowerCase().includes(q)
+      );
     }
 
     if (selectedStatus) {
-      const target = selectedStatus.toLowerCase();
-      result = result.filter((d) => (d.status || "").toLowerCase() === target);
+      result = result.filter(
+        (d) => (d.status || "").toLowerCase() === selectedStatus.toLowerCase()
+      );
     }
 
     return result;
@@ -75,34 +90,31 @@ export default function Drivers() {
     <>
       <Typography
         variant="h4"
-        sx={{
-          margin: "1rem 0",
-          fontFamily: "Lexend",
-          fontWeight: "bold",
-          color: "#00b2e1",
-        }}
+        sx={{ margin: "1rem 0", color: "#00b2e1", fontWeight: "bold" }}
       >
         Manage Drivers
       </Typography>
 
       <Stack spacing={2}>
-        <DriversHeader
-          showSearch
-          onSearch={setSearchQuery}
-          onStatusSelect={setSelectedStatus}
-          counts={counts} 
-        />
-
+            <DriversHeader
+              showSearch
+              onSearch={setSearchQuery}
+              onStatusSelect={setSelectedStatus}
+              counts={{
+                all: allDrivers.length,
+                available: allDrivers.filter((d) => (d.status || "").toLowerCase() === "available").length,
+                delivering: allDrivers.filter((d) => (d.status || "").toLowerCase() === "delivering").length,
+                offline: allDrivers.filter((d) => !d.status || d.status.toLowerCase() === "offline").length,
+              }}
+            />
         {loading ? (
           <CircularProgress sx={{ alignSelf: "center", mt: 4 }} />
         ) : (
           <DriverList
             drivers={filteredDrivers}
-            onViewMap={(driver) => console.log("Map:", driver)}
-            onGiveWarning={(driver) => console.warn("Warning:", driver)}
-            onAssignParcel={(driver) =>
-              alert(`Assigning parcel to ${getDisplayName(driver)}`)
-            }
+            onViewMap={(driver) => alert(`Viewing map for ${getDisplayName(driver)}`)}
+            onGiveWarning={(driver) => alert(`Giving warning to ${getDisplayName(driver)}`)}
+            onAssignParcel={(driver) => alert(`Assigning parcel to ${getDisplayName(driver)}`)}
           />
         )}
       </Stack>
