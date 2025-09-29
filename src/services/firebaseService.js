@@ -22,7 +22,11 @@ export const fetchAllParcels = async (uid = null) => {
             reference: parcelData.reference || '',
             status: parcelData.status || 'Pending',
             recipient: parcelData.recipient || '',
-            address: parcelData.address || '',
+            street: parcelData.street || '',
+            region: parcelData.region || '',
+            city: parcelData.city || '',
+            province: parcelData.province || '',
+            barangay: parcelData.barangay || '',
             dateAdded: parcelData.dateAdded?.toDate() || new Date(),
             userId: uid
           });
@@ -108,124 +112,110 @@ export const fetchParcelStatusData = async (uid = null) => {
   }
 };
 
-// Add a new parcel to the database following the nested structure
-// parcels > uid > timestamp > parcel_id
 export const addParcel = async (parcelData, uid) => {
   try {
-    if (!uid) {
-      throw new Error('User ID (uid) is required to add a parcel');
-    }
-    
-    // Create a timestamp for the current time
+    if (!uid) throw new Error("User ID (uid) is required to add a parcel");
+
+    // Use current time
     const now = new Date();
-    const timestamp = now.getTime();
-    
-    // Generate a unique ID for the parcel if not provided
-    const parcelId = parcelData.id || `PKG${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
-    
-    // Format the data to be stored
+    const parcelId =
+      parcelData.id ||
+      `PKG${Math.floor(Math.random() * 1_000_000)
+        .toString()
+        .padStart(6, "0")}`; // or let Firestore create one
+
+    // Prepare data
     const dataToStore = {
-      uid: uid,
-      reference: parcelData.reference || '',
-      status: parcelData.status || 'Pending',
-      recipient: parcelData.recipient || '',
-      address: parcelData.address || '',
+      uid,
+      reference: parcelData.reference || "",
+      status: parcelData.status || "Pending",
+      recipient: parcelData.recipient || "",
+      contact: parcelData.contact || "",
+      street: parcelData.street || "",
+      region: parcelData.region || "",
+      province: parcelData.province || "",
+      municipality: parcelData.municipality || "",
+      barangay: parcelData.barangay || "",
       dateAdded: parcelData.dateAdded || Timestamp.fromDate(now),
-      createdAt: Timestamp.fromDate(now)
+      createdAt: Timestamp.fromDate(now),
     };
-    
-    // Set the document at the nested path
-    const parcelDocRef = doc(db, `parcels/${parcelId}`);
+
+    // ✅ Correct way to set document
+    const parcelDocRef = doc(db, "parcels", parcelId);
     await setDoc(parcelDocRef, dataToStore);
-    
+
     return {
       success: true,
       id: parcelId,
-      timestamp: timestamp,
-      userId: uid
+      timestamp: now.getTime(),
+      userId: uid,
     };
   } catch (error) {
-    console.error('Error adding parcel:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error("Error adding parcel:", error);
+    return { success: false, error: error.message };
   }
 };
-
-// Update an existing parcel in the database
-// Requires only the parcelId
 export const updateParcel = async (parcelData, parcelId) => {
   try {
-    if (!parcelId) {
-      throw new Error('Parcel ID is required to update a parcel');
-    }
-    
-    // Format the data to be updated
+    if (!parcelId) throw new Error("Parcel ID is required to update a parcel");
+
     const dataToUpdate = {
       reference: parcelData.reference,
       status: parcelData.status,
       recipient: parcelData.recipient,
-      address: parcelData.address,
-      // Only include fields that are provided in the update
-      ...(parcelData.dateAdded && { dateAdded: parcelData.dateAdded }),
-      // Add updatedAt timestamp
-      updatedAt: Timestamp.fromDate(new Date())
+      contact: parcelData.contact,
+      street: parcelData.street,
+      region: parcelData.region,
+      province: parcelData.province,
+      municipality: parcelData.municipality,
+      barangay: parcelData.barangay,
+      updatedAt: Timestamp.fromDate(new Date()),
     };
-    
-    // Remove any undefined fields
-    Object.keys(dataToUpdate).forEach(key => {
-      if (dataToUpdate[key] === undefined) {
-        delete dataToUpdate[key];
-      }
-    });
-    
-    // Set the document at the path
-    const parcelDocRef = doc(db, `parcels/${parcelId}`);
+
+    // Remove undefined
+    Object.keys(dataToUpdate).forEach(
+      (key) => dataToUpdate[key] === undefined && delete dataToUpdate[key]
+    );
+
+    const parcelDocRef = doc(db, "parcels", parcelId);
     await setDoc(parcelDocRef, dataToUpdate, { merge: true });
-    
-    return {
-      success: true,
-      id: parcelId
-    };
-  } catch (error) {
-    console.error('Error updating parcel:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    return { success: true, id: parcelId };
+  } catch (err) {
+    console.error("Error updating parcel:", err);
+    return { success: false, error: err.message };
   }
 };
 
-// Delete a parcel from the database
-// Requires the parcelId
+// ✅ Delete parcel
 export const deleteParcel = async (parcelId) => {
   try {
-    if (!parcelId) {
-      throw new Error('Parcel ID is required to delete a parcel');
-    }
-    
-    // Reference to the parcel document
-    const parcelDocRef = doc(db, `parcels/${parcelId}`);
-    
-    // Delete the document
-    await deleteDoc(parcelDocRef);
-    
-    return {
-      success: true,
-      message: 'Parcel deleted successfully'
-    };
-  } catch (error) {
-    console.error('Error deleting parcel:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    if (!parcelId) throw new Error("Parcel ID is required to delete a parcel");
+    await deleteDoc(doc(db, "parcels", parcelId));
+    return { success: true };
+  } catch (err) {
+    console.error("Error deleting parcel:", err);
+    return { success: false, error: err.message };
   }
 };
+export async function assignParcelToDriver(parcelId, driverId) {
+  const parcelRef = doc(db, "parcels", parcelId);
+  const driverRef = doc(db, "users", driverId);
 
-// Get a single parcel by its ID
-// Requires only the parcelId
+  await updateDoc(parcelRef, {
+    assignedDriverId: driverId,
+    status: "assigned",
+    updatedAt: serverTimestamp(),
+  });
+
+
+  await updateDoc(driverRef, {
+    parcelsLeft: increment(1),
+    updatedAt: serverTimestamp(),
+  });
+
+  return true;
+}
+
 export const getParcel = async (parcelId) => {
   try {
     if (!parcelId) {

@@ -1,4 +1,16 @@
-import { List, ListItem, ListItemText, ListItemAvatar, Avatar, Typography, Chip, Divider, Box, Skeleton } from "@mui/material";
+import {
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  Avatar,
+  Typography,
+  Chip,
+  Divider,
+  Box,
+  Skeleton,
+  Stack,
+} from "@mui/material";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import { useEffect } from "react";
 
@@ -13,10 +25,24 @@ const statusColors = {
 const statusOrder = ["pending", "out for delivery", "delivered", "failed", "returned"];
 
 export default function ParcelList({ parcels = [], loading = false }) {
-  // If loading, show skeleton
-  useEffect(()=>{
-    console.log(parcels)
-  },[])
+
+  useEffect(() => {
+    console.log("📦 ParcelList received:", parcels);
+  }, [parcels]);
+
+
+  const formatDate = (date) => {
+    try {
+      if (!date) return "N/A";
+      if (date instanceof Date) return date.toLocaleDateString();
+      if (typeof date.toDate === "function") return date.toDate().toLocaleDateString();
+      return new Date(date).toLocaleDateString();
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
+  // ⏳ Loading skeleton
   if (loading) {
     return (
       <List sx={{ width: "100%", bgcolor: "background.paper" }}>
@@ -43,9 +69,9 @@ export default function ParcelList({ parcels = [], loading = false }) {
       </List>
     );
   }
-  
-  // If no parcels are provided, show a message
-  if (parcels.length === 0) {
+
+  // ❗ Empty state
+  if (!parcels.length) {
     return (
       <Typography variant="body2" color="text.secondary">
         No parcels found.
@@ -53,69 +79,103 @@ export default function ParcelList({ parcels = [], loading = false }) {
     );
   }
 
-  // Sort parcels by status
-  const sortedParcels = [...parcels].sort(
-    (a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status)
-  );
+  // 🔀 Sort by status order then newest date
+  const sortedParcels = [...parcels].sort((a, b) => {
+    const sOrder =
+      statusOrder.indexOf((a.status || "").toLowerCase()) -
+      statusOrder.indexOf((b.status || "").toLowerCase());
+    if (sOrder !== 0) return sOrder;
+    return (b.dateAdded?.seconds || 0) - (a.dateAdded?.seconds || 0);
+  });
 
   return (
     <List sx={{ width: "100%", bgcolor: "background.paper" }}>
-      {sortedParcels.map((parcel, index) => (
-        <Box key={parcel.id}>
-          <ListItem alignItems="flex-start" sx={{ py: 2 }}>
-            <ListItemAvatar>
-              <Avatar sx={{ bgcolor: statusColors[parcel.status?.toLowerCase()] || "#c4cad0" }}>
-                <LocalShippingIcon />
-              </Avatar>
-            </ListItemAvatar>
-            <ListItemText
-              primary={
-                <Chip
-                  label={parcel.status}
-                  size="small"
-                  sx={{
-                    backgroundColor: statusColors[parcel.status?.toLowerCase()] || "#c4cad0",
-                    color: "#fff",
-                    fontSize: "0.75rem",
-                  }}
-                />
-              }
-              secondary={
-                <>
-                  <Typography variant="body2" color="text.secondary">
-                    Parcel ID: {parcel.id}
-                  </Typography>
-                  {parcel.reference && (
-                    <Typography variant="body2" color="text.secondary">
-                      Reference No: {parcel.reference}
-                    </Typography>
-                  )}
-                  {parcel.recipient && (
-                    <Typography variant="body2" color="text.secondary">
-                      Recipient: {parcel.recipient}
-                    </Typography>
-                  )}
-                  {parcel.address && (
-                    <Typography variant="body2" color="text.secondary">
-                      Address: {parcel.address}
-                    </Typography>
-                  )}
-                  {parcel.dateAdded && (
-                    <Typography variant="body2" color="text.secondary">
-                      Date Added: {parcel.dateAdded instanceof Date 
-                        ? parcel.dateAdded.toLocaleDateString() 
-                        : typeof parcel.dateAdded.toDate === 'function'
-                          ? parcel.dateAdded.toDate().toLocaleDateString()
-                          : new Date(parcel.dateAdded).toLocaleDateString()}
-                    </Typography>
-                  )}
-                </>
-              }
-            />
-          </ListItem>
-          {index < sortedParcels.length - 1 && <Divider variant="inset" component="li" />}
-        </Box>
-      ))}
+      {sortedParcels.map((parcel, index) => {
+        const statusKey = parcel.status?.toLowerCase() || "pending";
+        const color = statusColors[statusKey] || "#c4cad0";
+
+        const fullAddress = [
+          parcel.street,
+          parcel.barangay,
+          parcel.municipality,
+          parcel.province,
+          parcel.region,
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+        return (
+          <Box key={parcel.id || index}>
+            <ListItem alignItems="flex-start" sx={{ py: 2 }}>
+              <ListItemAvatar>
+                <Avatar sx={{ bgcolor: color }}>
+                  <LocalShippingIcon />
+                </Avatar>
+              </ListItemAvatar>
+
+              <ListItemText
+                // ✅ Status + Driver stacked together
+                primary={
+                  <Stack spacing={0.5}>
+                    <Chip
+                      label={parcel.status || "Pending"}
+                      size="small"
+                      sx={{
+                        backgroundColor: color,
+                        color: "#fff",
+                        fontSize: "0.75rem",
+                        textTransform: "capitalize",
+                        width: "fit-content",
+                      }}
+                    />
+                    {parcel.driverName && (
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ fontWeight: 500 }}
+                      >
+                        Driver: {parcel.driverName}
+                      </Typography>
+                    )}
+                  </Stack>
+                }
+                secondary={
+                  <>
+                    {parcel.id && (
+                      <Typography variant="body2" color="text.secondary">
+                        Parcel ID: {parcel.id}
+                      </Typography>
+                    )}
+                    {parcel.reference && (
+                      <Typography variant="body2" color="text.secondary">
+                        Reference No: {parcel.reference}
+                      </Typography>
+                    )}
+                    {parcel.recipient && (
+                      <Typography variant="body2" color="text.secondary">
+                        Recipient: {parcel.recipient}
+                      </Typography>
+                    )}
+                    {fullAddress && (
+                      <Typography variant="body2" color="text.secondary">
+                        Address: {fullAddress}
+                      </Typography>
+                    )}
+                    {parcel.dateAdded && (
+                      <Typography variant="body2" color="text.secondary">
+                        Date Added: {formatDate(parcel.dateAdded)}
+                      </Typography>
+                    )}
+                  </>
+                }
+              />
+            </ListItem>
+            {index < sortedParcels.length - 1 && (
+              <Divider variant="inset" component="li" />
+            )}
+          </Box>
+        );
+      })}
     </List>
   );
 }

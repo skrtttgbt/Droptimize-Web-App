@@ -1,36 +1,102 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  doc,
+  getDoc,
+} from "firebase/firestore";
 import { db } from "/src/firebaseConfig";
-import { Card, CardContent, Typography, List, ListItemButton, ListItemText, Divider, Box, Avatar, ListItemAvatar } from "@mui/material";
+import {
+  Card,
+  CardContent,
+  Typography,
+  List,
+  ListItemButton,
+  ListItemText,
+  Divider,
+  Box,
+  Avatar,
+  ListItemAvatar,
+} from "@mui/material";
 import GiveWarningButton from "./GiveWarningButton.jsx";
 
-export default function DriverListPanel({ onDriverSelect, onGiveWarning }) {
+/** Haversine distance in KM */
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = (x) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function formatETA(hours) {
+  if (!isFinite(hours) || hours <= 0) return "N/A";
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+export default function DriverListPanel({ user, onDriverSelect, onGiveWarning }) {
   const [drivers, setDrivers] = useState([]);
+  const [branchId, setBranchId] = useState(null);
+  const [parcels, setParcels] = useState({}); // driverId → array of parcels
 
+  /** Get branchId of logged-in user */
   useEffect(() => {
-    const q = query(
-      collection(db, "users"),
-      where("role", "==", "driver"),
-      where("status", "==", "Delivering")
-    );
+    if (!user) return;
+    const fetchBranch = async () => {
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists()) setBranchId(userDoc.data().branchId || null);
+    };
+    fetchBranch();
+  }, [user]);
 
+  /** Listen for drivers in same branch */
+  useEffect(() => {
+    if (!branchId) return;
+    const q = query(collection(db, "users"), where("role", "==", "driver"), where("branchId", "==", branchId));
     const unsub = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      const sorted = data.sort((a, b) => {
-        const aOver = a.speed > (a.speedLimit || 60);
-        const bOver = b.speed > (b.speedLimit || 60);
-        return bOver - aOver;
-      });
-
-      setDrivers(sorted);
+      setDrivers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
     });
-
     return () => unsub();
-  }, []);
+  }, [branchId]);
+
+  /** Single listener for all parcels */
+  useEffect(() => {
+    if (!branchId) return;
+    const q = query(collection(db, "parcels"), where("status", "in", ["Pending", "Out For Delivery"]));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const grouped = {};
+      snapshot.docs.forEach((doc) => {
+        const p = doc.data();
+        if (!grouped[p.driverUid]) grouped[p.driverUid] = [];
+        grouped[p.driverUid].push({ id: doc.id, ...p });
+      });
+      setParcels(grouped);
+    });
+    return () => unsub();
+  }, [branchId]);
+
+  const getEtaForDriver = (driver) => {
+    const driverParcels = parcels[driver.id] || [];
+    if (!driverParcels.length || !driver.location || !driver.speed || driver.speed <= 0) return "N/A";
+    const nextParcel = driverParcels[0];
+    const dist = haversineDistance(
+      driver.location.latitude,
+      driver.location.longitude,
+      nextParcel.destination.latitude,
+      nextParcel.destination.longitude
+    );
+    const fastHrs = dist / driver.speed;
+    const slowHrs = dist / (driver.speed * 0.7);
+    return `${formatETA(fastHrs)} - ${formatETA(slowHrs)}`;
+  };
 
   return (
     <Card sx={{ height: "100%", overflowY: "auto" }}>
@@ -38,13 +104,8 @@ export default function DriverListPanel({ onDriverSelect, onGiveWarning }) {
         <Typography variant="h5" gutterBottom sx={{ color: "#00b2e1", fontWeight: "bold", fontFamily: "Lexend" }}>
           Drivers
         </Typography>
-
         {drivers.length === 0 ? (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ p: 2, textAlign: "center" }}
-          >
+          <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: "center" }}>
             No drivers found
           </Typography>
         ) : (
@@ -52,53 +113,53 @@ export default function DriverListPanel({ onDriverSelect, onGiveWarning }) {
             {drivers.map((driver, index) => {
               const speedLimit = driver.speedLimit || 60;
               const isOverspeeding = driver.speed > speedLimit;
-
+              const etaRange = getEtaForDriver(driver);
               return (
                 <Box key={driver.id}>
-                  <ListItemButton onClick={() => onDriverSelect(driver)}>
+                  <ListItemButton onClick={() => onDriverSelect({ ...driver, parcels: parcels[driver.id] || [] })}>
                     <ListItemAvatar>
-                      <Avatar
-                        src={driver.photoURL || ""}
-                        alt={driver.fullName || "Driver"}
-                      />
+                      <Avatar src={driver.photoURL || ""} alt={driver.fullName || "Driver"} />
                     </ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <Typography variant="subtitle1" fontWeight="bold">
-                          {driver.fullName || "Unnamed Driver"}
-                        </Typography>
-                      }
-                      secondary={
-                        <>
-                          <Typography variant="body2" color="text.secondary">
-                            Vehicle: {driver.vehicle || "N/A"}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Plate: {driver.plateNumber || "N/A"}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Parcels left: {driver.parcelsLeft ?? "N/A"}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            fontWeight="bold"
-                            sx={{
-                              color: isOverspeeding ? "#f21b3f" : "#29bf12",
-                            }}
-                          >
-                            Speed:{" "}
-                            {driver.speed ? `${driver.speed} km/h` : "N/A"}
-                          </Typography>
-                        </>
-                      }
-                    />
+                        <ListItemText
+                          primary={
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              {driver.fullName || "Unnamed Driver"}
+                            </Typography>
+                          }
+                          secondary={
+                            <>
+                              <Typography component="span" variant="body2" color="text.secondary" display="block">
+                                Vehicle: {driver.vehicle || "N/A"}
+                              </Typography>
+                              <Typography component="span" variant="body2" color="text.secondary" display="block">
+                                Plate: {driver.plateNumber || "N/A"}
+                              </Typography>
+                              <Typography component="span" variant="body2" color="text.secondary" display="block">
+                                Parcels: {parcels[driver.id]?.length || 0}
+                              </Typography>
+                              <Typography
+                                component="span"
+                                variant="body2"
+                                fontWeight="bold"
+                                display="block"
+                                sx={{ color: isOverspeeding ? "#f21b3f" : "#29bf12" }}
+                              >
+                                Speed: {driver.speed ? `${driver.speed} km/h` : "N/A"}
+                              </Typography>
+                              <Typography
+                                component="span"
+                                variant="body2"
+                                display="block"
+                                sx={{ fontWeight: "bold", color: "#00b2e1" }}
+                              >
+                                ETA to next parcel: {etaRange}
+                              </Typography>
+                            </>
+                          }
+                        />
+
                     {isOverspeeding && (
-                      <GiveWarningButton
-                        onClick={(e) => {
-                          e.stopPropagation(); // prevent selecting driver
-                          onGiveWarning?.(driver);
-                        }}
-                      />
+                      <GiveWarningButton onClick={(e) => { e.stopPropagation(); onGiveWarning?.(driver); }} />
                     )}
                   </ListItemButton>
                   {index < drivers.length - 1 && <Divider />}

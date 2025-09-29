@@ -12,12 +12,13 @@ import Parcels from "./pages/Parcels.jsx";
 import MapView from "./pages/MapView.jsx";
 import Profile from "./pages/Profile.jsx";
 import AccountSetup from "./pages/AccountSeutp.jsx";
-
+import DriverSimulator from "./components/DriverSimulator.jsx";
 export default function App() {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Router>
         <Routes>
+          <Route path="/simulator" element={<DriverSimulator />} />
           <Route path="/" element={<LandingPage />} />
           <Route path="/signup" element={<SignUpForm />} />
           <Route path="/login" element={<LogInForm />} />

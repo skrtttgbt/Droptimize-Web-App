@@ -27,16 +27,14 @@ export default function DriverList({
     offline: "#c4cad0",
   };
 
-  // ✅ Group drivers by status (null/undefined → Offline)
+  // ✅ Group drivers by status
   const groupedDrivers = { Available: [], Delivering: [], Offline: [] };
 
   drivers.forEach((driver) => {
-    const safeStatus = driver.status || "Offline"; // 🔑 Auto Offline if null
-    if (groupedDrivers[safeStatus]) {
-      groupedDrivers[safeStatus].push(driver);
-    } else {
-      groupedDrivers.Offline.push(driver); // fallback safety
-    }
+    const safeStatus = (driver.status || "offline").toLowerCase();
+    if (safeStatus === "available") groupedDrivers.Available.push(driver);
+    else if (safeStatus === "delivering") groupedDrivers.Delivering.push(driver);
+    else groupedDrivers.Offline.push(driver);
   });
 
   if (drivers.length === 0) {
@@ -53,13 +51,11 @@ export default function DriverList({
     );
   }
 
-  // ✅ Helper to safely display driver name
   const getDisplayName = (d) =>
     `${d.firstName || ""} ${d.lastName || ""}`.trim() || "Unnamed Driver";
 
-  // ✅ Render each driver card
   const renderDriverCard = (driver) => {
-    const displayStatus = driver.status || "Offline";
+    const displayStatus = (driver.status || "offline").toLowerCase();
 
     return (
       <Grid item xs={12} md={6} lg={4} key={driver.id}>
@@ -112,6 +108,7 @@ export default function DriverList({
                 size="small"
                 sx={{
                   color: "#fff",
+                  textTransform: "capitalize",
                   backgroundColor: statusColors[displayStatus] || "#c4cad0",
                 }}
               />
