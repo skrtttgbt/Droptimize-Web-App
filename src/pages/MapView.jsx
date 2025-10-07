@@ -51,15 +51,19 @@ export default function MapView() {
         Map View
       </Typography>
       <Grid container spacing={2}>
-        <Grid item xs={9}>
-          <MapComponent selectedDriver={selectedDriver} user={user} />
+        <Grid item size={9} >
+         <MapComponent
+              selectedDriver={selectedDriver}
+              user={user}
+            />
         </Grid>
-        <Grid item xs={3}>
+        <Grid item size={3}>
           <DriverListPanel
             user={user}
+            selectedDriver={selectedDriver} 
             onDriverSelect={handleDriverSelect}
             onGiveWarning={handleGiveWarning}
-          />    
+          />
         </Grid>
       </Grid>
     </>
