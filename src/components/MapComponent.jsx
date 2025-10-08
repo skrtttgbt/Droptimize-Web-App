@@ -1,146 +1,328 @@
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   GoogleMap,
   Marker,
+  Polyline,
   useJsApiLoader,
-  DirectionsService,
-  DirectionsRenderer,
-  InfoWindow,
   TrafficLayer,
+  InfoWindow,
 } from "@react-google-maps/api";
 import deliverLogo from "/src/assets/box.svg";
-import { CircularProgress, Button } from "@mui/material";
-import { collection, onSnapshot, query, where, doc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  collection,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+  setDoc,
+  getDoc,
+  query,
+  orderBy,
+  limit,
+  getDocs,
+} from "firebase/firestore";
 import { db } from "/src/firebaseConfig";
 
-export default function MapComponent({ selectedDriver, user }) {
+export default function MapComponent({ user }) {
   const [center, setCenter] = useState(null);
-  const [defaultCenter, setDefaultCenter] = useState(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
-  const [drivers, setDrivers] = useState([]);
-  const [driverPrevLocs, setDriverPrevLocs] = useState({});
-  const [routeResults, setRouteResults] = useState([]);
-  const [fastestId, setFastestId] = useState(null);
-  const [infoOpen, setInfoOpen] = useState(null);
+  const [slowdownPins, setSlowdownPins] = useState([]);
+  const [crosswalks, setCrosswalks] = useState([]);
+  const [crosswalkNodes, setCrosswalkNodes] = useState([]);
   const [showTraffic, setShowTraffic] = useState(true);
+  const [addingSlowdown, setAddingSlowdown] = useState(false);
+  const [existingSlowdowns, setExistingSlowdowns] = useState([]); // array of slowdowns without id
+  const [selectedIndex, setSelectedIndex] = useState(null); // index instead of zone id
+  const [editMode, setEditMode] = useState(false);
+  const [speedLimit, setSpeedLimit] = useState("");
+  const [branchId, setBranchId] = useState(null);
+
   const mapRef = useRef(null);
 
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: ["places"],
   });
 
-  /** 🧭 Load user location or default center */
+  // 1. Get branchId of user
+  useEffect(() => {
+    if (!user) return;
+    const fetchBranch = async () => {
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        if (data.branchId) {
+          setBranchId(data.branchId);
+        }
+      }
+    };
+    fetchBranch();
+  }, [user]);
+
+  // 2. Listen for slowdowns in branch subcollection, order by createdAt for stable order
+  useEffect(() => {
+    if (!branchId) return;
+    const slowdownsCol = collection(db, "branches", branchId, "slowdowns");
+    const q = query(slowdownsCol, orderBy("createdAt"));
+    const unsub = onSnapshot(q, (snap) => {
+      const arr = snap.docs.map((d) => d.data());
+      setExistingSlowdowns(arr);
+    });
+    return () => unsub();
+  }, [branchId]);
+
+  // 3. Get user location
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const posCenter = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setCenter(posCenter);
-        setDefaultCenter(posCenter);
+        setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setLoadingLocation(false);
       },
       () => {
-        const fallback = { lat: 14.6091, lng: 121.0223 }; // Manila fallback
-        setCenter(fallback);
-        setDefaultCenter(fallback);
+        setCenter({ lat: 14.6091, lng: 121.0223 });
         setLoadingLocation(false);
       }
     );
   }, []);
 
-  /** 🚗 Load drivers of same branch */
+  // 4. Fetch crosswalks via Overpass (unchanged)
   useEffect(() => {
-    if (!user) return;
-    let unsub;
+    if (!center) return;
 
-    const loadDrivers = async () => {
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const branchId = userDoc.exists() ? userDoc.data().branchId : null;
-      if (!branchId) return;
+    const fetchCrosswalks = async () => {
+      const dist = 0.005;
+      const minLat = center.lat - dist;
+      const maxLat = center.lat + dist;
+      const minLng = center.lng - dist;
+      const maxLng = center.lng + dist;
 
-      const q = query(
-        collection(db, "users"),
-        where("role", "==", "driver"),
-        where("branchId", "==", branchId)
-      );
+      const crosswalkQuery = `
+        [out:json];
+        (
+          way["highway"="crossing"](${minLat},${minLng},${maxLat},${maxLng});
+          node["highway"="crossing"](${minLat},${minLng},${maxLat},${maxLng});
+        );
+        out body;
+        >;
+        out skel qt;
+      `;
 
-      unsub = onSnapshot(q, (snap) => {
-        const updatedDrivers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setDrivers((prev) => {
-          const newPrev = { ...driverPrevLocs };
-          updatedDrivers.forEach((driver) => {
-            const prevLoc = prev[driver.id];
-            const currLoc = driver.location;
-            if (prevLoc && currLoc) {
-              const dx = currLoc.longitude - prevLoc.longitude;
-              const dy = currLoc.latitude - prevLoc.latitude;
-              driver.heading = (Math.atan2(dx, dy) * 180) / Math.PI + 90;
+      try {
+        const resp = await fetch(
+          `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(
+            crosswalkQuery
+          )}`
+        );
+        const data = await resp.json();
+        const ways = [];
+        const nodes = [];
+        if (data.elements) {
+          data.elements.forEach((el) => {
+            if (el.type === "way" && el.geometry) {
+              ways.push(
+                el.geometry.map((pt) => ({
+                  lat: pt.lat,
+                  lng: pt.lon,
+                }))
+              );
+            } else if (el.type === "node") {
+              nodes.push({ lat: el.lat, lng: el.lon });
             }
-            newPrev[driver.id] = currLoc;
           });
-          setDriverPrevLocs(newPrev);
-          return updatedDrivers;
-        });
-      });
+        }
+        setCrosswalks(ways);
+        setCrosswalkNodes(nodes);
+      } catch (err) {
+        console.error("Failed to fetch crosswalks:", err);
+      }
     };
 
-    loadDrivers();
-    return () => unsub && unsub();
-  }, [user]);
-
-  /** 🗺️ Generate routes for selected driver */
-  useEffect(() => {
-    if (!selectedDriver?.location || !selectedDriver?.parcels?.length || !mapRef.current) {
-      setRouteResults([]);
-      setFastestId(null);
-      return;
-    }
-
-    const origin = {
-      lat: selectedDriver.location.latitude,
-      lng: selectedDriver.location.longitude,
-    };
-
-    const validParcels = selectedDriver.parcels.filter(
-      (p) => p.destination?.latitude && p.destination?.longitude
-    );
-    if (validParcels.length === 0) return;
-
-    mapRef.current.panTo(origin);
-    mapRef.current.setZoom(13);
-
-    const routes = validParcels.map((p) => ({
-      id: p.id,
-      origin,
-      destination: {
-        lat: p.destination.latitude,
-        lng: p.destination.longitude,
-      },
-      res: null,
-      eta: null,
-      durationValue: null,
-    }));
-
-    setRouteResults(routes);
-  }, [selectedDriver]);
-
- 
+    fetchCrosswalks();
+  }, [center]);
 
   if (!isLoaded || loadingLocation || !center) {
     return (
       <div style={{ textAlign: "center", marginTop: "2rem" }}>
-        <CircularProgress />
-        <p>Fetching location...</p>
+        <p>Loading map...</p>
       </div>
     );
   }
 
+  const handleMapClick = (e) => {
+    if (editMode && selectedIndex !== null) {
+      if (slowdownPins.length < 2) {
+        const newPin = {
+          lat: e.latLng.lat(),
+          lng: e.latLng.lng(),
+          label: slowdownPins.length === 0 ? "A" : "B",
+        };
+        setSlowdownPins((prev) => [...prev, newPin]);
+      }
+      return;
+    }
+    if (!addingSlowdown) return;
+    if (slowdownPins.length >= 2) return;
+    const newPin = {
+      lat: e.latLng.lat(),
+      lng: e.latLng.lng(),
+      label: slowdownPins.length === 0 ? "A" : "B",
+    };
+    setSlowdownPins((prev) => [...prev, newPin]);
+  };
+
+  const saveSlowdown = async () => {
+    if (!branchId || slowdownPins.length !== 2) return;
+    const slowdownsCol = collection(db, "branches", branchId, "slowdowns");
+
+    const newSlowdown = {
+      start: { lat: slowdownPins[0].lat, lng: slowdownPins[0].lng },
+      end: { lat: slowdownPins[1].lat, lng: slowdownPins[1].lng },
+      speedLimit: parseInt(speedLimit),
+      createdAt: Date.now(),
+    };
+
+    try {
+      if (editMode && selectedIndex !== null) {
+        // Update existing slowdown doc by finding its doc ID via index
+        // For that, we fetch the doc IDs on-demand because we're no longer storing ids
+        // So we have to do a workaround: fetch all docs IDs ordered by createdAt, pick the one at selectedIndex
+
+        const slowdownsColRef = collection(db, "branches", branchId, "slowdowns");
+        const q = query(slowdownsColRef, orderBy("createdAt"));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.docs[selectedIndex]) {
+          const docId = querySnapshot.docs[selectedIndex].id;
+          await setDoc(doc(db, "branches", branchId, "slowdowns", docId), newSlowdown);
+        } else {
+          alert("Failed to update slowdown: Document not found.");
+          return;
+        }
+      } else {
+        // Add new slowdown with auto ID
+        await addDoc(slowdownsCol, newSlowdown);
+      }
+
+      setAddingSlowdown(false);
+      setEditMode(false);
+      setSlowdownPins([]);
+      setSpeedLimit("");
+      setSelectedIndex(null);
+      alert("Slowdown saved!");
+    } catch (err) {
+      console.error("Failed to save slowdown:", err);
+      alert("Error saving slowdown.");
+    }
+  };
+
+  const deleteSlowdown = async () => {
+    if (!branchId || selectedIndex === null) return;
+    try {
+      const slowdownsColRef = collection(db, "branches", branchId, "slowdowns");
+      const q = query(slowdownsColRef, orderBy("createdAt"));
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.docs[selectedIndex]) {
+        const docId = querySnapshot.docs[selectedIndex].id;
+        await deleteDoc(doc(db, "branches", branchId, "slowdowns", docId));
+        setSelectedIndex(null);
+        alert("Slowdown removed!");
+      } else {
+        alert("Failed to delete slowdown: Document not found.");
+      }
+    } catch (err) {
+      console.error("Failed to delete slowdown:", err);
+      alert("Error deleting slowdown.");
+    }
+  };
+
+  const getMidpoint = (a, b) => ({
+    lat: (a.lat + b.lat) / 2,
+    lng: (a.lng + b.lng) / 2,
+  });
+
   return (
     <div style={{ position: "relative" }}>
+      {/* Control Buttons and Inputs */}
+      <div
+        style={{
+          position: "absolute",
+          top: 10,
+          right: 10,
+          zIndex: 1000,
+          backgroundColor: "white",
+          padding: "6px 10px",
+          borderRadius: "8px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          userSelect: "none",
+          display: "flex",
+          gap: "8px",
+          flexWrap: "wrap",
+        }}
+      >
+        <button onClick={() => setShowTraffic((prev) => !prev)}>
+          {showTraffic ? "Hide Traffic" : "Show Traffic"}
+        </button>
+
+        {!addingSlowdown && !editMode && (
+          <button
+            onClick={() => {
+              setAddingSlowdown(true);
+              setSlowdownPins([]);
+            }}
+            style={{ backgroundColor: "#2196F3", color: "white" }}
+          >
+            Add Slowdown
+          </button>
+        )}
+
+        {(addingSlowdown || editMode) && (
+          <>
+            <input
+              type="number"
+              placeholder="Speed Limit (km/h)"
+              value={speedLimit}
+              onChange={(e) => setSpeedLimit(e.target.value)}
+              style={{
+                width: "140px",
+                padding: "4px 8px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+              }}
+            />
+            <button
+              onClick={() => {
+                setAddingSlowdown(false);
+                setEditMode(false);
+                setSlowdownPins([]);
+                setSpeedLimit("");
+                setSelectedIndex(null);
+              }}
+              style={{ backgroundColor: "#f44336", color: "white" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveSlowdown}
+              disabled={slowdownPins.length !== 2 || !speedLimit}
+              style={{
+                backgroundColor:
+                  slowdownPins.length === 2 && speedLimit ? "#4caf50" : "#9e9e9e",
+                color: "white",
+                cursor:
+                  slowdownPins.length === 2 && speedLimit
+                    ? "pointer"
+                    : "not-allowed",
+              }}
+            >
+              Save Slowdown
+            </button>
+          </>
+        )}
+      </div>
 
       <GoogleMap
         onLoad={(map) => (mapRef.current = map)}
         center={center}
-        zoom={12}
+        zoom={14}
         mapContainerStyle={{
           width: "100%",
           height: "90vh",
@@ -151,10 +333,10 @@ export default function MapComponent({ selectedDriver, user }) {
           fullscreenControl: false,
           mapTypeControl: true,
         }}
+        onClick={handleMapClick}
       >
         {showTraffic && <TrafficLayer autoUpdate />}
 
-        {/* 📍 User marker */}
         <Marker
           position={center}
           icon={{
@@ -168,123 +350,177 @@ export default function MapComponent({ selectedDriver, user }) {
           }}
         />
 
-        {/* 🚘 Driver markers */}
-        {drivers.map(
-          (d) =>
-            d.location && (
-              <Marker
-                key={d.id}
-                position={{
-                  lat: d.location.latitude,
-                  lng: d.location.longitude,
+        {slowdownPins.map((pin) => (
+          <Marker
+            key={`pin-${pin.label}`}
+            position={{ lat: pin.lat, lng: pin.lng }}
+            label={{
+              text: pin.label,
+              color: pin.label === "A" ? "blue" : "red",
+              fontWeight: "bold",
+            }}
+            icon={{
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: pin.label === "A" ? "blue" : "red",
+              fillOpacity: 0.9,
+              strokeWeight: 2,
+              strokeColor: "#fff",
+            }}
+          />
+        ))}
+
+        {existingSlowdowns.map((zone, idx) => {
+          const speed = zone.speedLimit ?? 0;
+          let color = "#9e9e9e";
+          if (speed <= 20) color = "#e53935";
+          else if (speed <= 40) color = "#fb8c00";
+          else if (speed <= 60) color = "#fdd835";
+          else color = "#43a047";
+
+          return (
+            <React.Fragment key={`slowdown-${idx}`}>
+              <Polyline
+                path={[zone.start, zone.end]}
+                options={{
+                  strokeColor: color,
+                  strokeOpacity: 0.9,
+                  strokeWeight: 5,
                 }}
+                onClick={() => {
+                  setSelectedIndex(idx);
+                  setSlowdownPins([
+                    { ...zone.start, label: "A" },
+                    { ...zone.end, label: "B" },
+                  ]);
+                  setSpeedLimit(zone.speedLimit?.toString() || "");
+                  setEditMode(true);
+                }}
+              />
+
+              <Marker
+                position={zone.start}
+                label={{ text: "A", color: "blue", fontWeight: "bold" }}
                 icon={{
-                  path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                  scale: 5,
-                  rotation: d.heading || 0,
-                  fillColor: selectedDriver?.id === d.id ? "#00b2e1" : "#333",
-                  fillOpacity: 1,
-                  strokeWeight: 1,
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: "blue",
+                  fillOpacity: 0.9,
+                  strokeWeight: 2,
                   strokeColor: "#fff",
                 }}
+              />
+              <Marker
+                position={zone.end}
+                label={{ text: "B", color: "red", fontWeight: "bold" }}
+                icon={{
+                  path: window.google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: "red",
+                  fillOpacity: 0.9,
+                  strokeWeight: 2,
+                  strokeColor: "#fff",
+                }}
+              />
+
+              <Marker
+                position={getMidpoint(zone.start, zone.end)}
+                icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 0 }}
                 label={{
-                  text: d.fullName || "Driver",
-                  color: "red",
+                  text: `${zone.speedLimit ?? "?"} km/h`,
+                  color: "#000",
                   fontWeight: "bold",
+                  fontSize: "14px",
                 }}
               />
-            )
-        )}
+            </React.Fragment>
+          );
+        })}
 
-        {/* 🚚 Parcel routes */}
-        {routeResults.map((route) => (
-          <div key={route.id}>
-            <DirectionsService
-              options={{
-                origin: route.origin,
-                destination: route.destination,
-                travelMode: "DRIVING",
-                drivingOptions: {
-                  departureTime: new Date(),
-                  trafficModel: "bestguess",
-                },
-              }}
-              callback={(res) => {
-                if (res?.status === "OK") {
-                  const leg = res.routes[0].legs[0];
-                  const etaInMin = Math.round(leg.duration_in_traffic.value / 60);
+        {crosswalks.map((path, idx) => (
+          <Polyline
+            key={`cw-way-${idx}`}
+            path={path}
+            options={{
+              strokeColor: "#00bcd4",
+              strokeOpacity: 1,
+              strokeWeight: 5,
+            }}
+          />
+        ))}
 
-                  setRouteResults((prev) => {
-                    const updated = prev.map((r) =>
-                      r.id === route.id
-                        ? {
-                            ...r,
-                            res,
-                            eta: `${etaInMin} min`,
-                            durationValue: leg.duration_in_traffic.value,
-                          }
-                        : r
-                    );
+        {crosswalkNodes.map((pos, idx) => {
+          const isEven = idx % 2 === 0;
+          const label = isEven ? "A" : "B";
+          const color = isEven ? "blue" : "red";
 
-                    // ✅ Prevent reduce crash with empty array
-                    const fastest = updated.length
-                      ? updated.reduce((a, b) =>
-                          !a || (b.durationValue && b.durationValue < a.durationValue)
-                            ? b
-                            : a
-                        )
-                      : null;
-
-                    setFastestId(fastest?.id || null);
-                    return updated;
-                  });
-                }
-              }}
-            />
-
-            {route.res && (
-              <DirectionsRenderer
-                directions={route.res}
-                options={{
-                  suppressMarkers: true,
-                  polylineOptions: {
-                    strokeColor: route.id === fastestId ? "#00b2e1" : "#808080",
-                    strokeWeight: route.id === fastestId ? 6 : 3,
-                    strokeOpacity: route.id === fastestId ? 1 : 0.6,
-                  },
-                }}
-              />
-            )}
-
-            {/* 📦 Parcel destination marker */}
+          return (
             <Marker
-              position={route.destination}
+              key={`cw-node-${idx}`}
+              position={pos}
               label={{
-                text: "Parcel",
-                color: "#fff",
+                text: label,
+                color,
                 fontWeight: "bold",
               }}
-              onClick={() => setInfoOpen(route.id)}
+              icon={{
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: color,
+                fillOpacity: 0.9,
+                strokeWeight: 2,
+                strokeColor: "#fff",
+              }}
             />
+          );
+        })}
 
-            {infoOpen === route.id && (
-              <InfoWindow
-                position={route.destination}
-                onCloseClick={() => setInfoOpen(null)}
+        {selectedIndex !== null && (
+          <InfoWindow
+            position={existingSlowdowns[selectedIndex].start}
+            onCloseClick={() => {
+              setSelectedIndex(null);
+              setEditMode(false);
+            }}
+          >
+            <div>
+              <h4 style={{ margin: "0 0 4px 0" }}>Slowdown Zone</h4>
+              <p style={{ margin: 0 }}>
+                Start: {existingSlowdowns[selectedIndex].start.lat.toFixed(5)},{" "}
+                {existingSlowdowns[selectedIndex].start.lng.toFixed(5)}
+                <br />
+                End: {existingSlowdowns[selectedIndex].end.lat.toFixed(5)},{" "}
+                {existingSlowdowns[selectedIndex].end.lng.toFixed(5)}
+              </p>
+              <p
+                style={{
+                  marginTop: "4px",
+                  fontSize: "0.85rem",
+                  color: "#666",
+                }}
               >
-                <div>
-                  <strong>ETA (with traffic):</strong>{" "}
-                  {route.eta || "Calculating..."}
-                  {route.id === fastestId && (
-                    <div style={{ color: "#00b2e1", fontWeight: "bold" }}>
-                      🚀 Fastest Route (Traffic Considered)
-                    </div>
-                  )}
-                </div>
-              </InfoWindow>
-            )}
-          </div>
-        ))}
+                Speed: {existingSlowdowns[selectedIndex].speedLimit ?? "?"} km/h
+                <br />
+                Created At:{" "}
+                {new Date(existingSlowdowns[selectedIndex].createdAt).toLocaleString()}
+              </p>
+              <button
+                onClick={deleteSlowdown}
+                style={{
+                  backgroundColor: "#f44336",
+                  color: "white",
+                  marginTop: "6px",
+                  padding: "4px 8px",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </InfoWindow>
+        )}
       </GoogleMap>
     </div>
   );
