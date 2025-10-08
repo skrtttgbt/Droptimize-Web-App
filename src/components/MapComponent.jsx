@@ -10,16 +10,9 @@ import {
 import deliverLogo from "/src/assets/box.svg";
 import {
   doc,
-  collection,
-  onSnapshot,
-  addDoc,
-  deleteDoc,
-  setDoc,
   getDoc,
-  query,
-  orderBy,
-  limit,
-  getDocs,
+  onSnapshot,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "/src/firebaseConfig";
 
@@ -31,8 +24,9 @@ export default function MapComponent({ user }) {
   const [crosswalkNodes, setCrosswalkNodes] = useState([]);
   const [showTraffic, setShowTraffic] = useState(true);
   const [addingSlowdown, setAddingSlowdown] = useState(false);
-  const [existingSlowdowns, setExistingSlowdowns] = useState([]); // array of slowdowns without id
-  const [selectedIndex, setSelectedIndex] = useState(null); // index instead of zone id
+  const [existingSlowdowns, setExistingSlowdowns] = useState([]); // array of slowdowns
+  const [slowdownPaths, setSlowdownPaths] = useState([]); // array of routes (roads) as lat/lng arrays
+  const [selectedIndex, setSelectedIndex] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [speedLimit, setSpeedLimit] = useState("");
   const [branchId, setBranchId] = useState(null);
@@ -44,7 +38,7 @@ export default function MapComponent({ user }) {
     libraries: ["places"],
   });
 
-  // 1. Get branchId of user
+  // 1. Fetch branchId for the user
   useEffect(() => {
     if (!user) return;
     const fetchBranch = async () => {
@@ -59,19 +53,72 @@ export default function MapComponent({ user }) {
     fetchBranch();
   }, [user]);
 
-  // 2. Listen for slowdowns in branch subcollection, order by createdAt for stable order
+  // 2. Subscribe to branch document slowdowns
   useEffect(() => {
     if (!branchId) return;
-    const slowdownsCol = collection(db, "branches", branchId, "slowdowns");
-    const q = query(slowdownsCol, orderBy("createdAt"));
-    const unsub = onSnapshot(q, (snap) => {
-      const arr = snap.docs.map((d) => d.data());
-      setExistingSlowdowns(arr);
+
+    const branchDocRef = doc(db, "branches", branchId);
+
+    const unsub = onSnapshot(branchDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const arr = Array.isArray(data.slowdowns) ? data.slowdowns : [];
+        setExistingSlowdowns(arr);
+      } else {
+        setExistingSlowdowns([]);
+      }
     });
+
     return () => unsub();
   }, [branchId]);
 
-  // 3. Get user location
+  // 3. Generate route paths (road-following) whenever existingSlowdowns changes
+  useEffect(() => {
+    const getRoutePolyline = async (start, end) => {
+      const directionsService = new window.google.maps.DirectionsService();
+      return new Promise((resolve, reject) => {
+        directionsService.route(
+          {
+            origin: start,
+            destination: end,
+            travelMode: window.google.maps.TravelMode.DRIVING,
+          },
+          (result, status) => {
+            if (status === "OK" && result.routes.length > 0) {
+              const path = result.routes[0].overview_path.map((pt) => ({
+                lat: pt.lat(),
+                lng: pt.lng(),
+              }));
+              resolve(path);
+            } else {
+              // fallback: straight line if routing fails
+              resolve([start, end]);
+            }
+          }
+        );
+      });
+    };
+
+    const buildPaths = async () => {
+      if (!existingSlowdowns || existingSlowdowns.length === 0) {
+        setSlowdownPaths([]);
+        return;
+      }
+
+      const promises = existingSlowdowns.map((zone) =>
+        getRoutePolyline(zone.start, zone.end)
+      );
+      const results = await Promise.all(promises);
+      setSlowdownPaths(results);
+    };
+
+    // Only call if Google Maps is loaded
+    if (isLoaded) {
+      buildPaths();
+    }
+  }, [existingSlowdowns, isLoaded]);
+
+  // 4. Get user location
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -79,13 +126,14 @@ export default function MapComponent({ user }) {
         setLoadingLocation(false);
       },
       () => {
+        // default fallback
         setCenter({ lat: 14.6091, lng: 121.0223 });
         setLoadingLocation(false);
       }
     );
   }, []);
 
-  // 4. Fetch crosswalks via Overpass (unchanged)
+  // 5. Fetch crosswalks via Overpass (this part unchanged)
   useEffect(() => {
     if (!center) return;
 
@@ -172,7 +220,6 @@ export default function MapComponent({ user }) {
 
   const saveSlowdown = async () => {
     if (!branchId || slowdownPins.length !== 2) return;
-    const slowdownsCol = collection(db, "branches", branchId, "slowdowns");
 
     const newSlowdown = {
       start: { lat: slowdownPins[0].lat, lng: slowdownPins[0].lng },
@@ -182,26 +229,32 @@ export default function MapComponent({ user }) {
     };
 
     try {
-      if (editMode && selectedIndex !== null) {
-        // Update existing slowdown doc by finding its doc ID via index
-        // For that, we fetch the doc IDs on-demand because we're no longer storing ids
-        // So we have to do a workaround: fetch all docs IDs ordered by createdAt, pick the one at selectedIndex
+      const branchRef = doc(db, "branches", branchId);
+      const branchSnap = await getDoc(branchRef);
 
-        const slowdownsColRef = collection(db, "branches", branchId, "slowdowns");
-        const q = query(slowdownsColRef, orderBy("createdAt"));
-        const querySnapshot = await getDocs(q);
-        if (querySnapshot.docs[selectedIndex]) {
-          const docId = querySnapshot.docs[selectedIndex].id;
-          await setDoc(doc(db, "branches", branchId, "slowdowns", docId), newSlowdown);
-        } else {
-          alert("Failed to update slowdown: Document not found.");
-          return;
-        }
-      } else {
-        // Add new slowdown with auto ID
-        await addDoc(slowdownsCol, newSlowdown);
+      if (!branchSnap.exists()) {
+        alert("Branch document not found.");
+        return;
       }
 
+      const branchData = branchSnap.data();
+      const existing = Array.isArray(branchData.slowdowns)
+        ? branchData.slowdowns
+        : [];
+
+      let updated;
+      if (editMode && selectedIndex !== null && selectedIndex < existing.length) {
+        updated = [...existing];
+        updated[selectedIndex] = newSlowdown;
+      } else {
+        updated = [...existing, newSlowdown];
+      }
+
+      await updateDoc(branchRef, {
+        slowdowns: updated,
+      });
+
+      // Reset UI
       setAddingSlowdown(false);
       setEditMode(false);
       setSlowdownPins([]);
@@ -216,18 +269,32 @@ export default function MapComponent({ user }) {
 
   const deleteSlowdown = async () => {
     if (!branchId || selectedIndex === null) return;
+
     try {
-      const slowdownsColRef = collection(db, "branches", branchId, "slowdowns");
-      const q = query(slowdownsColRef, orderBy("createdAt"));
-      const querySnapshot = await getDocs(q);
-      if (querySnapshot.docs[selectedIndex]) {
-        const docId = querySnapshot.docs[selectedIndex].id;
-        await deleteDoc(doc(db, "branches", branchId, "slowdowns", docId));
-        setSelectedIndex(null);
-        alert("Slowdown removed!");
-      } else {
-        alert("Failed to delete slowdown: Document not found.");
+      const branchRef = doc(db, "branches", branchId);
+      const branchSnap = await getDoc(branchRef);
+      if (!branchSnap.exists()) {
+        alert("Branch document not found.");
+        return;
       }
+      const branchData = branchSnap.data();
+      const existing = Array.isArray(branchData.slowdowns)
+        ? branchData.slowdowns
+        : [];
+
+      if (selectedIndex < 0 || selectedIndex >= existing.length) {
+        alert("Invalid index.");
+        return;
+      }
+
+      const updated = existing.filter((_, idx) => idx !== selectedIndex);
+
+      await updateDoc(branchRef, {
+        slowdowns: updated,
+      });
+
+      setSelectedIndex(null);
+      alert("Slowdown removed!");
     } catch (err) {
       console.error("Failed to delete slowdown:", err);
       alert("Error deleting slowdown.");
@@ -241,7 +308,7 @@ export default function MapComponent({ user }) {
 
   return (
     <div style={{ position: "relative" }}>
-      {/* Control Buttons and Inputs */}
+      {/* Controls UI */}
       <div
         style={{
           position: "absolute",
@@ -305,7 +372,9 @@ export default function MapComponent({ user }) {
               disabled={slowdownPins.length !== 2 || !speedLimit}
               style={{
                 backgroundColor:
-                  slowdownPins.length === 2 && speedLimit ? "#4caf50" : "#9e9e9e",
+                  slowdownPins.length === 2 && speedLimit
+                    ? "#4caf50"
+                    : "#9e9e9e",
                 color: "white",
                 cursor:
                   slowdownPins.length === 2 && speedLimit
@@ -378,10 +447,12 @@ export default function MapComponent({ user }) {
           else if (speed <= 60) color = "#fdd835";
           else color = "#43a047";
 
+          const path = slowdownPaths[idx] || [zone.start, zone.end];
+
           return (
             <React.Fragment key={`slowdown-${idx}`}>
               <Polyline
-                path={[zone.start, zone.end]}
+                path={path}
                 options={{
                   strokeColor: color,
                   strokeOpacity: 0.9,
@@ -486,10 +557,12 @@ export default function MapComponent({ user }) {
             <div>
               <h4 style={{ margin: "0 0 4px 0" }}>Slowdown Zone</h4>
               <p style={{ margin: 0 }}>
-                Start: {existingSlowdowns[selectedIndex].start.lat.toFixed(5)},{" "}
+                Start:{" "}
+                {existingSlowdowns[selectedIndex].start.lat.toFixed(5)},{" "}
                 {existingSlowdowns[selectedIndex].start.lng.toFixed(5)}
                 <br />
-                End: {existingSlowdowns[selectedIndex].end.lat.toFixed(5)},{" "}
+                End:{" "}
+                {existingSlowdowns[selectedIndex].end.lat.toFixed(5)},{" "}
                 {existingSlowdowns[selectedIndex].end.lng.toFixed(5)}
               </p>
               <p
@@ -502,7 +575,9 @@ export default function MapComponent({ user }) {
                 Speed: {existingSlowdowns[selectedIndex].speedLimit ?? "?"} km/h
                 <br />
                 Created At:{" "}
-                {new Date(existingSlowdowns[selectedIndex].createdAt).toLocaleString()}
+                {new Date(
+                  existingSlowdowns[selectedIndex].createdAt
+                ).toLocaleString()}
               </p>
               <button
                 onClick={deleteSlowdown}
