@@ -14,13 +14,12 @@ export default function MapView() {
   const [user, setUser] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
 
-  /** ✅ Track the logged-in user */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
-  /** ✅ When a driver is clicked */
+
   const handleDriverSelect = useCallback(
     (driver) => {
       setSelectedDriver(driver);
@@ -28,7 +27,7 @@ export default function MapView() {
     []
   );
 
-  /** ✅ Send a warning to a driver */
+
   const handleGiveWarning = async (driver) => {
     try {
       const driverRef = doc(db, "users", driver.id);

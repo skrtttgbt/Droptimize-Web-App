@@ -28,8 +28,6 @@ import {
 import { getAuth } from "firebase/auth";
 import { addParcel } from "../../services/firebaseService";
 import { db } from "../../firebaseConfig";
-
-/** 🌎 Geocode helper using OpenStreetMap Nominatim */
 async function geocodeAddress({
   street,
   barangay,
@@ -37,7 +35,6 @@ async function geocodeAddress({
   provinceName,
   regionName,
 }) {
-  // Build a single string (street optional)
   const parts = [street, barangay, municipalityName, provinceName, regionName]
     .filter(Boolean)
     .join(", ");
@@ -57,7 +54,7 @@ async function geocodeAddress({
   } catch (err) {
     console.error("❌ Geocoding failed:", err);
   }
-  return null; // fallback if no match
+  return null;
 }
 
 export default function ParcelEntryModal({ open, handleClose, onSave }) {
@@ -70,37 +67,14 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
   const [baseRefNum, setBaseRefNum] = useState(0);
   const [rows, setRows] = useState([]);
 
-  /** 🔢 Fetch latest reference number */
-  const fetchLatestReference = async (uid) => {
-    try {
-      const q = query(
-        collection(db, "users", uid, "parcels"),
-        orderBy("reference", "desc"),
-        limit(1)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const latest = snap.docs[0].data().reference;
-        const num = parseInt(latest.replace(/REF-/, ""), 10) || 0;
-        setBaseRefNum(num);
-      } else {
-        setBaseRefNum(0);
-      }
-    } catch (err) {
-      console.error("❌ Failed to fetch latest reference:", err);
-      setBaseRefNum(0);
-    }
-  };
 
-  /** 📥 Fetch PSGC data for Region/Province/Municipality/Barangay */
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
         const auth = getAuth();
         const user = auth.currentUser;
-        if (user) await fetchLatestReference(user.uid);
-
+        
         const [r, p, m, b] = await Promise.all([
           fetch("https://psgc.gitlab.io/api/regions/").then((res) => res.json()),
           fetch("https://psgc.gitlab.io/api/provinces/").then((res) => res.json()),
@@ -138,34 +112,33 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
     load();
   }, []);
 
-  /** 📝 Update a specific cell in the table */
   const updateRow = (index, key, value, labelKey, labelValue) => {
     setRows((prev) =>
       prev.map((row, i) =>
         i === index
           ? {
-              ...row,
-              [key]: value,
-              ...(labelKey ? { [labelKey]: labelValue } : {}),
-              ...(key === "region" && {
-                province: "",
-                provinceName: "",
-                municipality: "",
-                municipalityName: "",
-                barangay: "",
-                barangayName: "",
-              }),
-              ...(key === "province" && {
-                municipality: "",
-                municipalityName: "",
-                barangay: "",
-                barangayName: "",
-              }),
-              ...(key === "municipality" && {
-                barangay: "",
-                barangayName: "",
-              }),
-            }
+            ...row,
+            [key]: value,
+            ...(labelKey ? { [labelKey]: labelValue } : {}),
+            ...(key === "region" && {
+              province: "",
+              provinceName: "",
+              municipality: "",
+              municipalityName: "",
+              barangay: "",
+              barangayName: "",
+            }),
+            ...(key === "province" && {
+              municipality: "",
+              municipalityName: "",
+              barangay: "",
+              barangayName: "",
+            }),
+            ...(key === "municipality" && {
+              barangay: "",
+              barangayName: "",
+            }),
+          }
           : row
       )
     );
@@ -190,13 +163,11 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
       },
     ]);
 
-  /** 💾 Save all parcels with dynamic coordinates */
   const handleSaveAll = async () => {
     const auth = getAuth();
     const user = auth.currentUser;
     if (!user) return alert("No user logged in");
 
-    // Validate
     for (const [i, row] of rows.entries()) {
       if (
         !row.recipient ||
@@ -210,11 +181,8 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
       }
     }
 
-    // Save each parcel
     for (let i = 0; i < rows.length; i++) {
       const reference = `REF-${String(baseRefNum + i + 1).padStart(6, "0")}`;
-
-      // 🌍 Get coordinates from address
       const destination = await geocodeAddress({
         street: rows[i].street,
         barangay: rows[i].barangayName,
@@ -225,7 +193,6 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
 
       await addParcel(
         {
-          reference,
           status: rows[i].status,
           recipient: rows[i].recipient,
           contact: rows[i].contact,
@@ -240,11 +207,10 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
         user.uid
       );
 
-      // Optional: rate-limit Nominatim (~1 req/sec)
       await new Promise((r) => setTimeout(r, 1000));
     }
-
-    alert("✅ Parcels saved!");
+    // Parcel Success Message Here
+    alert("Parcels saved!");
     onSave?.();
     handleClose();
     setRows([
@@ -263,7 +229,6 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
         barangayName: "",
       },
     ]);
-    await fetchLatestReference(user.uid);
   };
 
   if (loading) {
@@ -300,7 +265,6 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Reference</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Recipient</TableCell>
                 <TableCell>Contact</TableCell>
@@ -329,9 +293,7 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
 
                 return (
                   <TableRow key={idx}>
-                    <TableCell>
-                      {`REF-${String(baseRefNum + idx + 1).padStart(6, "0")}`}
-                    </TableCell>
+                    
 
                     {/* Status */}
                     <TableCell>

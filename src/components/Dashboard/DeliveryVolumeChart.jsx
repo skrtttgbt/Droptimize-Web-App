@@ -3,7 +3,7 @@ import { Paper, Typography, Box, ToggleButton, ToggleButtonGroup } from "@mui/ma
 import { LineChart } from "@mui/x-charts/LineChart";
 
 export default function DeliveryVolumeChart({ dailyData = [], weeklyData = [] }) {
-  const [view, setView] = useState("daily");  // State to manage the view (daily/weekly)
+  const [view, setView] = useState("daily");  
 
   // Handle view change
   const handleChange = (_, nextView) => {

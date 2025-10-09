@@ -7,15 +7,15 @@ export const fetchAllParcels = async (uid = null) => {
     if (uid) {
       const parcelsRef = collection(db, 'parcels');
       const parcelsSnapshot = await getDocs(parcelsRef);
-      
+
       if (parcelsSnapshot.empty) {
         return parcels;
       }
-      
+
       for (const parcelDoc of parcelsSnapshot.docs) {
         const parcelId = parcelDoc.id;
         const parcelData = parcelDoc.data();
-        
+
         if (parcelData.uid === uid) {
           parcels.push({
             id: parcelId,
@@ -39,7 +39,7 @@ export const fetchAllParcels = async (uid = null) => {
       for (const parcelDoc of parcelsSnapshot.docs) {
         const parcelId = parcelDoc.id;
         const parcelData = parcelDoc.data();
-        
+
         parcels.push({
           id: parcelId,
           reference: parcelData.reference || '',
@@ -51,7 +51,7 @@ export const fetchAllParcels = async (uid = null) => {
         });
       }
     }
-    
+
     return parcels;
   } catch (error) {
     console.error('Error fetching parcels:', error);
@@ -73,15 +73,15 @@ export const fetchParcelStatusData = async (uid = null) => {
     if (parcelsSnapshot.empty) {
       return { delivered: 0, outForDelivery: 0, failedOrReturned: 0, pending: 0, total: 0 };
     }
-    
+
     for (const parcelDoc of parcelsSnapshot.docs) {
       const parcelData = parcelDoc.data();
       console.log()
       if (uid && parcelData.uid !== uid) {
-        continue; 
+        continue;
       }
       console.log(parcelData.status.toLowerCase())
-      switch(parcelData.status?.toLowerCase()) {
+      switch (parcelData.status?.toLowerCase()) {
         case 'delivered':
           delivered++;
           break;
@@ -98,13 +98,13 @@ export const fetchParcelStatusData = async (uid = null) => {
           break;
       }
     }
-    
-    return { 
-      delivered, 
-      outForDelivery, 
-      failedOrReturned, 
+
+    return {
+      delivered,
+      outForDelivery,
+      failedOrReturned,
       pending,
-      total: delivered + outForDelivery + failedOrReturned + pending 
+      total: delivered + outForDelivery + failedOrReturned + pending
     };
   } catch (error) {
     console.error('Error fetching parcel status data:', error);
@@ -122,9 +122,7 @@ export const addParcel = async (parcelData, uid) => {
       parcelData.id ||
       `PKG${Math.floor(Math.random() * 1_000_000)
         .toString()
-        .padStart(6, "0")}`; // or let Firestore create one
-
-    // Prepare data
+        .padStart(6, "0")}`; 
     const dataToStore = {
       uid,
       packageId: parcelId,
@@ -142,7 +140,6 @@ export const addParcel = async (parcelData, uid) => {
       destination: parcelData.destination || "",
     };
 
-    // ✅ Correct way to set document
     const parcelDocRef = doc(db, "parcels", parcelId);
     await setDoc(parcelDocRef, dataToStore);
 
@@ -162,7 +159,7 @@ export const updateParcel = async (parcelData, parcelId) => {
     if (!parcelId) throw new Error("Parcel ID is required to update a parcel");
 
     const dataToUpdate = {
-      reference: parcelData.reference,
+      reference: parcelId,
       status: parcelData.status,
       recipient: parcelData.recipient,
       contact: parcelData.contact,
@@ -174,7 +171,6 @@ export const updateParcel = async (parcelData, parcelId) => {
       updatedAt: Timestamp.fromDate(new Date()),
     };
 
-    // Remove undefined
     Object.keys(dataToUpdate).forEach(
       (key) => dataToUpdate[key] === undefined && delete dataToUpdate[key]
     );
@@ -188,7 +184,6 @@ export const updateParcel = async (parcelData, parcelId) => {
   }
 };
 
-// ✅ Delete parcel
 export const deleteParcel = async (parcelId) => {
   try {
     if (!parcelId) throw new Error("Parcel ID is required to delete a parcel");
@@ -223,22 +218,17 @@ export const getParcel = async (parcelId) => {
     if (!parcelId) {
       throw new Error('Parcel ID is required to get a parcel');
     }
-    
-    // Reference to the parcel document
+
     const parcelDocRef = doc(db, `parcels/${parcelId}`);
-    
-    // Get the document
     const parcelDoc = await getDoc(parcelDocRef);
-    
+
     if (!parcelDoc.exists()) {
       return {
         success: false,
         error: 'Parcel not found'
       };
     }
-    
     const parcelData = parcelDoc.data();
-    
     return {
       success: true,
       data: {
@@ -265,18 +255,17 @@ export const fetchDriverStatusData = async () => {
   try {
     const driversRef = collection(db, 'drivers');
     const driversSnapshot = await getDocs(driversRef);
-    
+
     let available = 0;
     let onTrip = 0;
     let offline = 0;
-    
+
     driversSnapshot.forEach((doc) => {
       const driver = doc.data();
-      switch(driver.status?.toLowerCase()) {
+      switch (driver.status?.toLowerCase()) {
         case 'available':
           available++;
           break;
-        case 'on trip':
         case 'delivering':
           onTrip++;
           break;
@@ -286,7 +275,7 @@ export const fetchDriverStatusData = async () => {
           break;
       }
     });
-    
+
     return { available, onTrip, offline };
   } catch (error) {
     console.error('Error fetching driver status data:', error);
@@ -294,30 +283,28 @@ export const fetchDriverStatusData = async () => {
   }
 };
 
-// Fetch delivery volume data
 export const fetchDeliveryVolumeData = async (period = 'daily') => {
   try {
     const deliveriesRef = collection(db, 'deliveries');
     const deliveriesSnapshot = await getDocs(deliveriesRef);
-    
+
     // Process data based on period (daily/weekly)
     const deliveryData = {};
-    
+
     deliveriesSnapshot.forEach((doc) => {
       const delivery = doc.data();
       const date = new Date(delivery.date?.toDate() || delivery.date);
-      
+
       if (!date || isNaN(date.getTime())) return;
-      
+
       let dateKey;
       if (period === 'daily') {
         dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
       } else {
-        // Get week number
         const weekNumber = getWeekNumber(date);
         dateKey = `Week ${weekNumber}`;
       }
-      
+
       if (!deliveryData[dateKey]) {
         deliveryData[dateKey] = {
           date: dateKey,
@@ -325,15 +312,14 @@ export const fetchDeliveryVolumeData = async (period = 'daily') => {
           failedOrReturned: 0
         };
       }
-      
+
       deliveryData[dateKey].deliveries++;
-      
+
       if (delivery.status === 'failed' || delivery.status === 'returned') {
         deliveryData[dateKey].failedOrReturned++;
       }
     });
-    
-    // Calculate success rate and convert to array
+
     const result = Object.values(deliveryData).map(item => {
       const successRate = ((item.deliveries - item.failedOrReturned) / item.deliveries) * 100;
       return {
@@ -341,7 +327,7 @@ export const fetchDeliveryVolumeData = async (period = 'daily') => {
         successRate: isNaN(successRate) ? 0 : successRate.toFixed(2)
       };
     });
-    
+
     // Sort by date
     return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch (error) {
@@ -350,30 +336,28 @@ export const fetchDeliveryVolumeData = async (period = 'daily') => {
   }
 };
 
-// Fetch overspeeding incidents data
 export const fetchOverspeedingData = async (period = 'daily') => {
   try {
     const incidentsRef = collection(db, 'speedingIncidents');
     const incidentsSnapshot = await getDocs(incidentsRef);
-    
-    // Process data based on period (daily/weekly)
+
     const incidentData = {};
-    
+
     incidentsSnapshot.forEach((doc) => {
       const incident = doc.data();
       const date = new Date(incident.timestamp?.toDate() || incident.timestamp);
-      
+
       if (!date || isNaN(date.getTime())) return;
-      
+
       let dateKey;
       if (period === 'daily') {
         dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
       } else {
-        // Get week number
+
         const weekNumber = getWeekNumber(date);
         dateKey = `Week ${weekNumber}`;
       }
-      
+
       if (!incidentData[dateKey]) {
         incidentData[dateKey] = {
           date: dateKey,
@@ -382,16 +366,15 @@ export const fetchOverspeedingData = async (period = 'daily') => {
           speedReadings: 0
         };
       }
-      
+
       incidentData[dateKey].incidents++;
-      
+
       if (incident.speed) {
         incidentData[dateKey].totalSpeed += incident.speed;
         incidentData[dateKey].speedReadings++;
       }
     });
-    
-    // Calculate average speed and convert to array
+
     const result = Object.values(incidentData).map(item => {
       const avgSpeed = item.speedReadings > 0 ? item.totalSpeed / item.speedReadings : 0;
       return {
@@ -400,8 +383,7 @@ export const fetchOverspeedingData = async (period = 'daily') => {
         avgSpeed: Math.round(avgSpeed)
       };
     });
-    
-    // Sort by date
+
     return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch (error) {
     console.error('Error fetching overspeeding data:', error);
@@ -409,13 +391,13 @@ export const fetchOverspeedingData = async (period = 'daily') => {
   }
 };
 
-// Fetch recent incidents
+
 export const fetchRecentIncidents = async (limit = 5) => {
   try {
-    const incidentsRef = collection(db, 'speedingIncidents');
+    const incidentsRef = collection(db, 'users');
     const q = query(incidentsRef, orderBy('timestamp', 'desc'), limit(limit));
     const incidentsSnapshot = await getDocs(q);
-    
+
     const incidents = [];
     incidentsSnapshot.forEach((doc) => {
       const incident = doc.data();
@@ -427,7 +409,7 @@ export const fetchRecentIncidents = async (limit = 5) => {
         speed: incident.speed || 0
       });
     });
-    
+
     return incidents;
   } catch (error) {
     console.error('Error fetching recent incidents:', error);
@@ -435,7 +417,6 @@ export const fetchRecentIncidents = async (limit = 5) => {
   }
 };
 
-// Helper function to get week number
 function getWeekNumber(date) {
   const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
   const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
