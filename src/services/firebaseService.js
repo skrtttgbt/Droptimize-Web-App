@@ -127,6 +127,7 @@ export const addParcel = async (parcelData, uid) => {
     // Prepare data
     const dataToStore = {
       uid,
+      packageId: parcelId,
       reference: parcelData.reference || "",
       status: parcelData.status || "Pending",
       recipient: parcelData.recipient || "",
@@ -138,6 +139,7 @@ export const addParcel = async (parcelData, uid) => {
       barangay: parcelData.barangay || "",
       dateAdded: parcelData.dateAdded || Timestamp.fromDate(now),
       createdAt: Timestamp.fromDate(now),
+      destination: parcelData.destination || "",
     };
 
     // ✅ Correct way to set document

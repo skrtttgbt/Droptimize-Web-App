@@ -6,6 +6,8 @@ import {
   where,
   doc,
   getDoc,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "/src/firebaseConfig";
 import {
@@ -23,7 +25,7 @@ import {
 } from "@mui/material";
 import GiveWarningButton from "./GiveWarningButton.jsx";
 
-/** Haversine distance in KM */
+/** Haversine distance in KM to compute the shortest distance */
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const toRad = (x) => (x * Math.PI) / 180;
@@ -31,7 +33,9 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   const dLon = toRad(lon2 - lon1);
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
@@ -43,16 +47,42 @@ function formatETA(hours) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+// To check if the driver is within a slowdown zone
+function isInSlowdownZone(driverLocation, slowdown) {
+  if (!driverLocation || !slowdown.location) return false;
+  const distKm = haversineDistance(
+    driverLocation.latitude,
+    driverLocation.longitude,
+    slowdown.location.lat,
+    slowdown.location.lng
+  );
+  // Default radius 15 meters = 0.015 km for slowdown zones that are not defined on the database but defined in the map api 
+  const radiusKm = (slowdown.radius || 15) / 1000;
+  return distKm <= radiusKm;
+}
+// Get the current applicable speed limit for a driver based on slowdown zones
+function getDynamicSpeedLimit(driver, slowdowns) {
+  if (!driver.location) return driver.speedLimit || 25; 
+  const zones = slowdowns.filter((zone) =>
+    isInSlowdownZone(driver.location, zone)
+  );
+  if (zones.length === 0) {
+    return driver.speedLimit || 25;
+  }
+  return Math.min(...zones.map((z) => z.speedLimit));
+}
+
 export default function DriverListPanel({
   user,
   selectedDriver,
   onDriverSelect,
-  onGiveWarning,
 }) {
   const [drivers, setDrivers] = useState([]);
   const [branchId, setBranchId] = useState(null);
   const [parcels, setParcels] = useState({});
+  const [slowdowns, setSlowdowns] = useState([]);
 
+  // Fetch user's branchId
   useEffect(() => {
     if (!user) return;
     const fetchBranch = async () => {
@@ -62,12 +92,14 @@ export default function DriverListPanel({
     fetchBranch();
   }, [user]);
 
+  // Listen for drivers
   useEffect(() => {
     if (!branchId) return;
     const q = query(
       collection(db, "users"),
       where("role", "==", "driver"),
-      where("branchId", "==", branchId)
+      where("branchId", "==", branchId),
+      where("status", "==", "Delivering")
     );
     const unsub = onSnapshot(q, (snapshot) => {
       setDrivers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
@@ -75,6 +107,7 @@ export default function DriverListPanel({
     return () => unsub();
   }, [branchId]);
 
+  // Listen for parcels
   useEffect(() => {
     if (!branchId) return;
     const q = query(
@@ -93,6 +126,17 @@ export default function DriverListPanel({
     return () => unsub();
   }, [branchId]);
 
+  // Listen for slowdown zones
+  useEffect(() => {
+    if (!branchId) return;
+    const q = query(collection(db, "slowdowns"), where("branchId", "==", branchId));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setSlowdowns(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, [branchId]);
+
+  // Calculate ETA range
   const getEtaForDriver = (driver) => {
     const driverParcels = parcels[driver.id] || [];
     if (
@@ -113,6 +157,29 @@ export default function DriverListPanel({
     const slowHrs = dist / (driver.speed * 0.7);
     return `${formatETA(fastHrs)} - ${formatETA(slowHrs)}`;
   };
+
+
+
+async function handleGiveWarning(driver) {
+  if (!user) {
+    alert("User not authenticated");
+    return;
+  }
+
+  try {
+    await addDoc(collection(db, "drivers", driver.id, "violations"), {
+      issuedBy: user.uid,
+      timestamp: serverTimestamp(),
+      status: "Pending",
+      message: "Speeding violation",
+    });
+    alert(`Warning given to ${driver.fullName || "driver"}`);
+  } catch (error) {
+    console.error("Error adding warning:", error);
+    alert("Failed to give warning. Please try again.");
+  }
+}
+
 
   return (
     <Card sx={{ height: "100%", overflowY: "auto" }}>
@@ -153,7 +220,7 @@ export default function DriverListPanel({
         ) : (
           <List disablePadding>
             {drivers.map((driver, index) => {
-              const limit = driver.speedLimit || 60;
+              const limit = getDynamicSpeedLimit(driver, slowdowns);
               const isOverspeeding = driver.speed > limit;
               const etaRange = getEtaForDriver(driver);
               const isActive = selectedDriver?.id === driver.id;
@@ -212,22 +279,15 @@ export default function DriverListPanel({
                           >
                             ETA to next parcel: {etaRange}
                           </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{ color: "#ff9800", fontWeight: "bold" }}
-                          >
-                            Slowdown limit: {limit} km/h
-                          </Typography>
                         </>
                       }
                     />
 
-                    {/* ⚠️ Give Warning if Overspeed */}
                     {isOverspeeding && (
                       <GiveWarningButton
                         onClick={(e) => {
                           e.stopPropagation();
-                          onGiveWarning?.(driver);
+                          handleGiveWarning(driver);
                         }}
                       />
                     )}

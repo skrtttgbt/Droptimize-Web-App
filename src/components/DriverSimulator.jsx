@@ -4,8 +4,8 @@ import { doc, updateDoc } from "firebase/firestore";
 
 export default function DriverSimulator() {
   const [speed, setSpeed] = useState(40);
-  const [lat, setLat] = useState(14.5995);
-  const [lng, setLng] = useState(120.9842);
+  const [lat, setLat] = useState(15.331934);
+  const [lng, setLng] = useState(120.590635);
   const driverId = "lbLTkKU0rQfc7fA3lJnWAPZjCPG3"; // 👈 Firestore doc id of your fake driver
 
   // Update Firestore every 3 seconds

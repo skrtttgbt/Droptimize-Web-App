@@ -16,18 +16,14 @@ import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 
 export default function DriverList({
   drivers = [],
-  onViewMap,
-  onGiveWarning,
   onAssignParcel,
 }) {
-  // ✅ Status colors
   const statusColors = {
     available: "#29bf12",
     delivering: "#ff9914",
     offline: "#c4cad0",
   };
 
-  // ✅ Group drivers by status
   const groupedDrivers = { Available: [], Delivering: [], Offline: [] };
 
   drivers.forEach((driver) => {
@@ -119,42 +115,11 @@ export default function DriverList({
                     <Typography variant="body2" color="textSecondary">
                       {driver.speed} km/h
                     </Typography>
-                    {driver.speedLimit &&
-                      driver.speed > driver.speedLimit && (
-                        <Tooltip
-                          title={`Overspeeding (Limit: ${driver.speedLimit} km/h)`}
-                        >
-                          <WarningIcon color="error" fontSize="small" />
-                        </Tooltip>
-                      )}
                   </Box>
                 )}
             </Box>
 
-            {/* ✅ Actions */}
-            {displayStatus === "delivering" && (
-              <Stack direction="row" spacing={1} mt={1}>
-                <Button
-                  size="small"
-                  startIcon={<MapIcon />}
-                  onClick={() => onViewMap?.(driver)}
-                  sx={{ textTransform: "none" }}
-                >
-                  See on Map
-                </Button>
-                <Button
-                  size="small"
-                  color="error"
-                  variant="outlined"
-                  startIcon={<ReportProblemIcon />}
-                  onClick={() => onGiveWarning?.(driver)}
-                  sx={{ textTransform: "none" }}
-                >
-                  Give Warning
-                </Button>
-              </Stack>
-            )}
-
+            
             {displayStatus === "available" && (
               <Stack direction="row" spacing={1} mt={1}>
                 <Button
