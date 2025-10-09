@@ -2,10 +2,9 @@ import React, { useEffect, useState, useRef } from "react";
 import {
   GoogleMap,
   Marker,
-  Polyline,
+  Circle,
   useJsApiLoader,
   TrafficLayer,
-  InfoWindow,
 } from "@react-google-maps/api";
 import deliverLogo from "/src/assets/box.svg";
 import {
@@ -16,19 +15,33 @@ import {
 } from "firebase/firestore";
 import { db } from "/src/firebaseConfig";
 
+const CATEGORY_COLORS = {
+  Church: "#4caf50",    // green
+  Crosswalk: "#2196F3", // blue
+  Schools: "#ff9800",   // orange
+  Slowdown: "#9e9e9e",  // grey default
+};
+
 export default function MapComponent({ user }) {
   const [center, setCenter] = useState(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
-  const [slowdownPins, setSlowdownPins] = useState([]);
-  const [crosswalks, setCrosswalks] = useState([]);
-  const [crosswalkNodes, setCrosswalkNodes] = useState([]);
   const [showTraffic, setShowTraffic] = useState(true);
+
+  // Single slowdown pin (or null)
+  const [slowdownPin, setSlowdownPin] = useState(null);
+
+  const [existingSlowdowns, setExistingSlowdowns] = useState([]);
+  const [crosswalkNodes, setCrosswalkNodes] = useState([]);
+
   const [addingSlowdown, setAddingSlowdown] = useState(false);
-  const [existingSlowdowns, setExistingSlowdowns] = useState([]); // array of slowdowns
-  const [slowdownPaths, setSlowdownPaths] = useState([]); // array of routes (roads) as lat/lng arrays
-  const [selectedIndex, setSelectedIndex] = useState(null);
   const [editMode, setEditMode] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+
+  // Settings for slowdown radius, speed limit, category
   const [speedLimit, setSpeedLimit] = useState("");
+  const [slowdownRadius, setSlowdownRadius] = useState("0");
+  const [category, setCategory] = useState("Slowdown");
+
   const [branchId, setBranchId] = useState(null);
 
   const mapRef = useRef(null);
@@ -72,53 +85,7 @@ export default function MapComponent({ user }) {
     return () => unsub();
   }, [branchId]);
 
-  // 3. Generate route paths (road-following) whenever existingSlowdowns changes
-  useEffect(() => {
-    const getRoutePolyline = async (start, end) => {
-      const directionsService = new window.google.maps.DirectionsService();
-      return new Promise((resolve, reject) => {
-        directionsService.route(
-          {
-            origin: start,
-            destination: end,
-            travelMode: window.google.maps.TravelMode.DRIVING,
-          },
-          (result, status) => {
-            if (status === "OK" && result.routes.length > 0) {
-              const path = result.routes[0].overview_path.map((pt) => ({
-                lat: pt.lat(),
-                lng: pt.lng(),
-              }));
-              resolve(path);
-            } else {
-              // fallback: straight line if routing fails
-              resolve([start, end]);
-            }
-          }
-        );
-      });
-    };
-
-    const buildPaths = async () => {
-      if (!existingSlowdowns || existingSlowdowns.length === 0) {
-        setSlowdownPaths([]);
-        return;
-      }
-
-      const promises = existingSlowdowns.map((zone) =>
-        getRoutePolyline(zone.start, zone.end)
-      );
-      const results = await Promise.all(promises);
-      setSlowdownPaths(results);
-    };
-
-    // Only call if Google Maps is loaded
-    if (isLoaded) {
-      buildPaths();
-    }
-  }, [existingSlowdowns, isLoaded]);
-
-  // 4. Get user location
+  // 3. Get user location
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -126,19 +93,19 @@ export default function MapComponent({ user }) {
         setLoadingLocation(false);
       },
       () => {
-        // default fallback
+        // fallback location
         setCenter({ lat: 14.6091, lng: 121.0223 });
         setLoadingLocation(false);
       }
     );
   }, []);
 
-  // 5. Fetch crosswalks via Overpass (this part unchanged)
+  // 4. Fetch crosswalks via Overpass (nodes only for simplicity)
   useEffect(() => {
     if (!center) return;
 
     const fetchCrosswalks = async () => {
-      const dist = 0.005;
+      const dist = 0.05;
       const minLat = center.lat - dist;
       const maxLat = center.lat + dist;
       const minLng = center.lng - dist;
@@ -147,12 +114,9 @@ export default function MapComponent({ user }) {
       const crosswalkQuery = `
         [out:json];
         (
-          way["highway"="crossing"](${minLat},${minLng},${maxLat},${maxLng});
           node["highway"="crossing"](${minLat},${minLng},${maxLat},${maxLng});
         );
         out body;
-        >;
-        out skel qt;
       `;
 
       try {
@@ -162,23 +126,14 @@ export default function MapComponent({ user }) {
           )}`
         );
         const data = await resp.json();
-        const ways = [];
         const nodes = [];
         if (data.elements) {
           data.elements.forEach((el) => {
-            if (el.type === "way" && el.geometry) {
-              ways.push(
-                el.geometry.map((pt) => ({
-                  lat: pt.lat,
-                  lng: pt.lon,
-                }))
-              );
-            } else if (el.type === "node") {
+            if (el.type === "node") {
               nodes.push({ lat: el.lat, lng: el.lon });
             }
           });
         }
-        setCrosswalks(ways);
         setCrosswalkNodes(nodes);
       } catch (err) {
         console.error("Failed to fetch crosswalks:", err);
@@ -197,34 +152,24 @@ export default function MapComponent({ user }) {
   }
 
   const handleMapClick = (e) => {
-    if (editMode && selectedIndex !== null) {
-      if (slowdownPins.length < 2) {
-        const newPin = {
-          lat: e.latLng.lat(),
-          lng: e.latLng.lng(),
-          label: slowdownPins.length === 0 ? "A" : "B",
-        };
-        setSlowdownPins((prev) => [...prev, newPin]);
-      }
-      return;
-    }
     if (!addingSlowdown) return;
-    if (slowdownPins.length >= 2) return;
+    if (slowdownPin) return; // Only one pin allowed
+
     const newPin = {
       lat: e.latLng.lat(),
       lng: e.latLng.lng(),
-      label: slowdownPins.length === 0 ? "A" : "B",
     };
-    setSlowdownPins((prev) => [...prev, newPin]);
+    setSlowdownPin(newPin);
   };
 
   const saveSlowdown = async () => {
-    if (!branchId || slowdownPins.length !== 2) return;
+    if (!branchId || !slowdownPin || !speedLimit || !slowdownRadius || !category) return;
 
     const newSlowdown = {
-      start: { lat: slowdownPins[0].lat, lng: slowdownPins[0].lng },
-      end: { lat: slowdownPins[1].lat, lng: slowdownPins[1].lng },
+      location: { lat: slowdownPin.lat, lng: slowdownPin.lng },
       speedLimit: parseInt(speedLimit),
+      radius: parseInt(slowdownRadius),
+      category,
       createdAt: Date.now(),
     };
 
@@ -257,8 +202,10 @@ export default function MapComponent({ user }) {
       // Reset UI
       setAddingSlowdown(false);
       setEditMode(false);
-      setSlowdownPins([]);
+      setSlowdownPin(null);
       setSpeedLimit("");
+      setSlowdownRadius("0");
+      setCategory("Slowdown");
       setSelectedIndex(null);
       alert("Slowdown saved!");
     } catch (err) {
@@ -293,7 +240,14 @@ export default function MapComponent({ user }) {
         slowdowns: updated,
       });
 
+      // Reset UI
       setSelectedIndex(null);
+      setEditMode(false);
+      setSlowdownPin(null);
+      setSpeedLimit("");
+      setSlowdownRadius("0");
+      setCategory("Slowdown");
+
       alert("Slowdown removed!");
     } catch (err) {
       console.error("Failed to delete slowdown:", err);
@@ -301,10 +255,41 @@ export default function MapComponent({ user }) {
     }
   };
 
-  const getMidpoint = (a, b) => ({
-    lat: (a.lat + b.lat) / 2,
-    lng: (a.lng + b.lng) / 2,
-  });
+  // When clicking existing slowdown on map
+  const handleSlowdownClick = (zone, idx) => {
+    setSelectedIndex(idx);
+    setEditMode(true);
+    setSlowdownPin(zone.location);
+    setSpeedLimit(zone.speedLimit?.toString() || "");
+    setSlowdownRadius(zone.radius?.toString() || "0");
+    setCategory(zone.category || "Slowdown");
+    setAddingSlowdown(false);
+  };
+
+  // When clicking a crosswalk node, treat it like a slowdown with default category "Crosswalk",
+  // radius 15, and speedLimit 25 (new)
+  const handleCrosswalkClick = (pos) => {
+    const foundIndex = existingSlowdowns.findIndex(
+      (zone) =>
+        zone.location.lat === pos.lat &&
+        zone.location.lng === pos.lng &&
+        zone.category === "Crosswalk"
+    );
+
+    if (foundIndex !== -1) {
+      // edit existing crosswalk slowdown
+      handleSlowdownClick(existingSlowdowns[foundIndex], foundIndex);
+    } else {
+      // new crosswalk slowdown on this location with default speedLimit 25 and radius 15
+      setSelectedIndex(null);
+      setEditMode(false);
+      setAddingSlowdown(true);
+      setSlowdownPin(pos);
+      setSpeedLimit("25"); // <-- default speed limit for crosswalk
+      setSlowdownRadius("15");
+      setCategory("Crosswalk");
+    }
+  };
 
   return (
     <div style={{ position: "relative" }}>
@@ -323,6 +308,7 @@ export default function MapComponent({ user }) {
           display: "flex",
           gap: "8px",
           flexWrap: "wrap",
+          alignItems: "center",
         }}
       >
         <button onClick={() => setShowTraffic((prev) => !prev)}>
@@ -333,7 +319,11 @@ export default function MapComponent({ user }) {
           <button
             onClick={() => {
               setAddingSlowdown(true);
-              setSlowdownPins([]);
+              setSlowdownPin(null);
+              setSpeedLimit("");
+              setSlowdownRadius("0");
+              setCategory("Slowdown");
+              setSelectedIndex(null);
             }}
             style={{ backgroundColor: "#2196F3", color: "white" }}
           >
@@ -343,258 +333,174 @@ export default function MapComponent({ user }) {
 
         {(addingSlowdown || editMode) && (
           <>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={{
+                padding: "4px 8px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                minWidth: "120px",
+              }}
+            >
+              <option value="Slowdown">Slowdown</option>
+              <option value="Church">Church</option>
+              <option value="Crosswalk">Crosswalk</option>
+              <option value="Schools">Schools</option>
+            </select>
+
             <input
               type="number"
               placeholder="Speed Limit (km/h)"
               value={speedLimit}
               onChange={(e) => setSpeedLimit(e.target.value)}
-              style={{
-                width: "140px",
-                padding: "4px 8px",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
-              }}
+              style={{ width: "140px", padding: "4px 8px" }}
             />
+
+            <input
+              type="number"
+              placeholder="Radius (meters)"
+              value={slowdownRadius}
+              onChange={(e) => setSlowdownRadius(e.target.value)}
+              min={category === "Crosswalk" ? 5 : 5}
+              max={category === "Crosswalk" ? 0 : 1000}
+              style={{ width: "110px", padding: "4px 8px" }}
+              disabled={false}
+            />
+
+            <button
+              onClick={saveSlowdown}
+              style={{ backgroundColor: "#4caf50", color: "white" }}
+            >
+              Save
+            </button>
+
+            {editMode && (
+              <button
+                onClick={deleteSlowdown}
+                style={{ backgroundColor: "#f44336", color: "white" }}
+              >
+                Delete
+              </button>
+            )}
+
             <button
               onClick={() => {
                 setAddingSlowdown(false);
                 setEditMode(false);
-                setSlowdownPins([]);
+                setSlowdownPin(null);
                 setSpeedLimit("");
+                setSlowdownRadius("0");
+                setCategory("Slowdown");
                 setSelectedIndex(null);
               }}
-              style={{ backgroundColor: "#f44336", color: "white" }}
             >
               Cancel
-            </button>
-            <button
-              onClick={saveSlowdown}
-              disabled={slowdownPins.length !== 2 || !speedLimit}
-              style={{
-                backgroundColor:
-                  slowdownPins.length === 2 && speedLimit
-                    ? "#4caf50"
-                    : "#9e9e9e",
-                color: "white",
-                cursor:
-                  slowdownPins.length === 2 && speedLimit
-                    ? "pointer"
-                    : "not-allowed",
-              }}
-            >
-              Save Slowdown
             </button>
           </>
         )}
       </div>
 
       <GoogleMap
-        onLoad={(map) => (mapRef.current = map)}
+        mapContainerStyle={{ width: "100%", height: "80vh" }}
         center={center}
-        zoom={14}
-        mapContainerStyle={{
-          width: "100%",
-          height: "90vh",
-          borderRadius: "12px",
-        }}
-        options={{
-          streetViewControl: false,
-          fullscreenControl: false,
-          mapTypeControl: true,
-        }}
+        zoom={16}
         onClick={handleMapClick}
+        onLoad={(map) => (mapRef.current = map)}
       >
-        {showTraffic && <TrafficLayer autoUpdate />}
+        {showTraffic && <TrafficLayer />}
 
+        {/* User location */}
         <Marker
           position={center}
           icon={{
             url: deliverLogo,
             scaledSize: new window.google.maps.Size(40, 40),
           }}
-          label={{
-            text: "You",
-            color: "#2196F3",
-            fontWeight: "bold",
-          }}
         />
 
-        {slowdownPins.map((pin) => (
-          <Marker
-            key={`pin-${pin.label}`}
-            position={{ lat: pin.lat, lng: pin.lng }}
-            label={{
-              text: pin.label,
-              color: pin.label === "A" ? "blue" : "red",
-              fontWeight: "bold",
-            }}
-            icon={{
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: pin.label === "A" ? "blue" : "red",
-              fillOpacity: 0.9,
-              strokeWeight: 2,
-              strokeColor: "#fff",
-            }}
-          />
-        ))}
-
+        {/* Existing Slowdowns */}
         {existingSlowdowns.map((zone, idx) => {
-          const speed = zone.speedLimit ?? 0;
-          let color = "#9e9e9e";
-          if (speed <= 20) color = "#e53935";
-          else if (speed <= 40) color = "#fb8c00";
-          else if (speed <= 60) color = "#fdd835";
-          else color = "#43a047";
-
-          const path = slowdownPaths[idx] || [zone.start, zone.end];
-
+          if (editMode && selectedIndex === idx) {
+            return null; // Don't render the old circle while editing
+          }
+          if (addingSlowdown) {
+            return null; // Hide existing slowdowns while adding new one
+          }
           return (
-            <React.Fragment key={`slowdown-${idx}`}>
-              <Polyline
-                path={path}
-                options={{
-                  strokeColor: color,
-                  strokeOpacity: 0.9,
-                  strokeWeight: 5,
-                }}
-                onClick={() => {
-                  setSelectedIndex(idx);
-                  setSlowdownPins([
-                    { ...zone.start, label: "A" },
-                    { ...zone.end, label: "B" },
-                  ]);
-                  setSpeedLimit(zone.speedLimit?.toString() || "");
-                  setEditMode(true);
-                }}
-              />
-
-              <Marker
-                position={zone.start}
-                label={{ text: "A", color: "blue", fontWeight: "bold" }}
-                icon={{
-                  path: window.google.maps.SymbolPath.CIRCLE,
-                  scale: 8,
-                  fillColor: "blue",
-                  fillOpacity: 0.9,
-                  strokeWeight: 2,
-                  strokeColor: "#fff",
-                }}
-              />
-              <Marker
-                position={zone.end}
-                label={{ text: "B", color: "red", fontWeight: "bold" }}
-                icon={{
-                  path: window.google.maps.SymbolPath.CIRCLE,
-                  scale: 8,
-                  fillColor: "red",
-                  fillOpacity: 0.9,
-                  strokeWeight: 2,
-                  strokeColor: "#fff",
-                }}
-              />
-
-              <Marker
-                position={getMidpoint(zone.start, zone.end)}
-                icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 0 }}
-                label={{
-                  text: `${zone.speedLimit ?? "?"} km/h`,
-                  color: "#000",
-                  fontWeight: "bold",
-                  fontSize: "14px",
-                }}
-              />
-            </React.Fragment>
-          );
-        })}
-
-        {crosswalks.map((path, idx) => (
-          <Polyline
-            key={`cw-way-${idx}`}
-            path={path}
-            options={{
-              strokeColor: "#00bcd4",
-              strokeOpacity: 1,
-              strokeWeight: 5,
-            }}
-          />
-        ))}
-
-        {crosswalkNodes.map((pos, idx) => {
-          const isEven = idx % 2 === 0;
-          const label = isEven ? "A" : "B";
-          const color = isEven ? "blue" : "red";
-
-          return (
-            <Marker
-              key={`cw-node-${idx}`}
-              position={pos}
-              label={{
-                text: label,
-                color,
-                fontWeight: "bold",
-              }}
-              icon={{
-                path: window.google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: color,
-                fillOpacity: 0.9,
+            <Circle
+              key={`slowdown-${idx}`}
+              center={zone.location}
+              radius={zone.radius}
+              options={{
+                strokeColor: CATEGORY_COLORS[zone.category] || "#9e9e9e",
+                fillColor: CATEGORY_COLORS[zone.category] || "#9e9e9e",
+                fillOpacity: 0.3,
                 strokeWeight: 2,
-                strokeColor: "#fff",
+                clickable: true,
+                zIndex: 5,
               }}
+              onClick={() => handleSlowdownClick(zone, idx)}
             />
           );
         })}
 
-        {selectedIndex !== null && (
-          <InfoWindow
-            position={existingSlowdowns[selectedIndex].start}
-            onCloseClick={() => {
-              setSelectedIndex(null);
-              setEditMode(false);
-            }}
-          >
-            <div>
-              <h4 style={{ margin: "0 0 4px 0" }}>Slowdown Zone</h4>
-              <p style={{ margin: 0 }}>
-                Start:{" "}
-                {existingSlowdowns[selectedIndex].start.lat.toFixed(5)},{" "}
-                {existingSlowdowns[selectedIndex].start.lng.toFixed(5)}
-                <br />
-                End:{" "}
-                {existingSlowdowns[selectedIndex].end.lat.toFixed(5)},{" "}
-                {existingSlowdowns[selectedIndex].end.lng.toFixed(5)}
-              </p>
-              <p
-                style={{
-                  marginTop: "4px",
-                  fontSize: "0.85rem",
-                  color: "#666",
-                }}
-              >
-                Speed: {existingSlowdowns[selectedIndex].speedLimit ?? "?"} km/h
-                <br />
-                Created At:{" "}
-                {new Date(
-                  existingSlowdowns[selectedIndex].createdAt
-                ).toLocaleString()}
-              </p>
-              <button
-                onClick={deleteSlowdown}
-                style={{
-                  backgroundColor: "#f44336",
-                  color: "white",
-                  marginTop: "6px",
-                  padding: "4px 8px",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </InfoWindow>
+        {/* Crosswalk nodes as circles with default radius 15 if not already saved as slowdown */}
+        {crosswalkNodes.map((node, idx) => {
+          // Check if this crosswalk node already saved as slowdown
+          const isSaved = existingSlowdowns.some(
+            (zone) =>
+              zone.category === "Crosswalk" &&
+              Math.abs(zone.location.lat - node.lat) < 0.00001 &&
+              Math.abs(zone.location.lng - node.lng) < 0.00001
+          );
+
+          if (isSaved) return null;
+
+          return (
+            <Circle
+              key={`crosswalk-${idx}`}
+              center={node}
+              radius={15}
+              options={{
+                strokeColor: CATEGORY_COLORS.Crosswalk,
+                fillColor: CATEGORY_COLORS.Crosswalk,
+                fillOpacity: 0.15,
+                strokeWeight: 2,
+                clickable: true,
+                zIndex: 3,
+              }}
+              onClick={() => handleCrosswalkClick(node)}
+            />
+          );
+        })}
+
+        {/* Slowdown pin being added or edited */}
+        {slowdownPin && (addingSlowdown || editMode) && (
+          <>
+            <Marker
+              position={slowdownPin}
+              draggable={true}
+              onDragEnd={(e) =>
+                setSlowdownPin({ lat: e.latLng.lat(), lng: e.latLng.lng() })
+              }
+              icon={{
+                url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+              }}
+            />
+            <Circle
+              center={slowdownPin}
+              radius={parseInt(slowdownRadius)}
+              options={{
+                strokeColor: CATEGORY_COLORS[category] || "#9e9e9e",
+                fillColor: CATEGORY_COLORS[category] || "#9e9e9e",
+                fillOpacity: 0.3,
+                strokeWeight: 2,
+                clickable: false,
+                zIndex: 10,
+              }}
+            />
+          </>
         )}
       </GoogleMap>
     </div>

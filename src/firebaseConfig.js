@@ -47,6 +47,7 @@ export const registerUser = async (formData) => {
 
 export const loginUser = async (email, password) => {
   try {
+    
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
     localStorage.setItem("user", JSON.stringify(user));
