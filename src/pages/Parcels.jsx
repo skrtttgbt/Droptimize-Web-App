@@ -1,8 +1,15 @@
-import { Button, Stack, Typography, CircularProgress, Box } from "@mui/material";
+import {
+  Button,
+  Stack,
+  Typography,
+  CircularProgress,
+  Box,
+  Paper,
+} from "@mui/material";
 import { useEffect, useState } from "react";
 import ParcelsHeader from "../components/Dashboard/ParcelsHeader.jsx";
 import ParcelList from "../components/Dashboard/ParcelList.jsx";
-import CSVModal from "./Modals/CSVModal.jsx";
+import CSVModal from "./Modals/ParcelEntryModal.jsx";
 import { fetchAllParcels } from "../services/firebaseService.js";
 import { auth } from "../firebaseConfig.js";
 
@@ -22,32 +29,22 @@ export default function Parcels() {
   const [parcels, setParcels] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  /** ✅ Single function to fetch and compute everything */
   const fetchParcels = async () => {
     setLoading(true);
     try {
       const currentUser = auth.currentUser;
       const uid = currentUser ? currentUser.uid : null;
-
       const parcelData = await fetchAllParcels(uid);
 
-      // 🔑 Add fullAddress for search/display
       const enriched = parcelData.map((p) => ({
         ...p,
-        address: [
-          p.street,
-          p.barangay,
-          p.municipality,
-          p.province,
-          p.region,
-        ]
+        address: [p.street, p.barangay, p.municipality, p.province, p.region]
           .filter(Boolean)
           .join(", "),
       }));
 
       setParcels(enriched);
 
-      // 🔢 Update counts
       const newCounts = {
         all: enriched.length,
         pending: 0,
@@ -60,7 +57,8 @@ export default function Parcels() {
         const status = (parcel.status || "pending").toLowerCase();
         if (status === "delivered") newCounts.delivered++;
         else if (status === "out for delivery") newCounts.outForDelivery++;
-        else if (status === "failed" || status === "returned") newCounts.failed++;
+        else if (status === "failed" || status === "returned")
+          newCounts.failed++;
         else newCounts.pending++;
       });
 
@@ -77,17 +75,19 @@ export default function Parcels() {
     fetchParcels();
   }, []);
 
-  // 🔍 Search filter
   const filteredBySearch = searchQuery
     ? parcels.filter((parcel) => {
         const query = searchQuery.toLowerCase();
-
         let formattedDate = "";
+
         if (parcel.dateAdded) {
           if (parcel.dateAdded instanceof Date) {
             formattedDate = parcel.dateAdded.toLocaleDateString().toLowerCase();
           } else if (typeof parcel.dateAdded.toDate === "function") {
-            formattedDate = parcel.dateAdded.toDate().toLocaleDateString().toLowerCase();
+            formattedDate = parcel.dateAdded
+              .toDate()
+              .toLocaleDateString()
+              .toLowerCase();
           } else {
             formattedDate = new Date(parcel.dateAdded)
               .toLocaleDateString()
@@ -96,7 +96,8 @@ export default function Parcels() {
         }
 
         return (
-          (parcel.recipient && parcel.recipient.toLowerCase().includes(query)) ||
+          (parcel.recipient &&
+            parcel.recipient.toLowerCase().includes(query)) ||
           (parcel.id && parcel.id.toLowerCase().includes(query)) ||
           (parcel.reference && parcel.reference.toLowerCase().includes(query)) ||
           (parcel.address && parcel.address.toLowerCase().includes(query)) ||
@@ -105,7 +106,6 @@ export default function Parcels() {
       })
     : parcels;
 
-  // ⚡ Status filter
   const filteredByStatus = selectedStatus
     ? filteredBySearch.filter(
         (p) =>
@@ -114,7 +114,6 @@ export default function Parcels() {
       )
     : filteredBySearch;
 
-  // 🔀 Sorting
   const sortedParcels = [...filteredByStatus].sort((a, b) => {
     const [key, direction] = (selectedSort || "dateAdded_desc").split("_");
     let aVal = a[key] ?? "";
@@ -138,20 +137,41 @@ export default function Parcels() {
   });
 
   return (
-    <>
+    <Box 
+      sx={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          px: { xs: 2, md: 4 },
+          py: 3,
+          boxSizing: "border-box",
+        }}
+        >
+      {/* Header title */}
       <Typography
         variant="h4"
         sx={{
-          margin: "1rem 0",
-          fontFamily: "Lexend",
-          fontWeight: "bold",
+          mb: 2,
           color: "#00b2e1",
+          fontWeight: "bold",
+          fontFamily: "Lexend",
         }}
       >
         Parcels
       </Typography>
 
-      <Stack spacing={2}>
+      {/* Main content card */}
+      <Paper
+        elevation={2}
+        sx={{
+          p: 3,
+          borderRadius: 3,
+          display: "flex",
+          flexDirection: "column",
+          gap: 3,
+          minHeight: "80vh",
+        }}
+      >
         <ParcelsHeader
           showSearch
           showSort
@@ -165,30 +185,67 @@ export default function Parcels() {
           counts={counts}
         />
 
-        <Stack direction="row" spacing={2}>
+        {/* Buttons */}
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          alignItems="flex-start"
+        >
           <Button
             variant="contained"
-            sx={{ bgcolor: "#00b2e1", fontWeight: "bold", width: 200 }}
+            sx={{
+              bgcolor: "#00b2e1",
+              color: "#fff",
+              fontWeight: "bold",
+              px: 3,
+              height: 45,
+              borderRadius: 2,
+              width: { xs: "100%", sm: 170 },
+              textTransform: "none",
+              boxShadow: "0px 3px 8px rgba(0,0,0,0.15)",
+              "&:hover": {
+                bgcolor: "#00a2d0",
+                boxShadow: "0px 4px 10px rgba(0,0,0,0.2)",
+              },
+            }}
             onClick={() => setOpenCSVModal(true)}
           >
-            Add Parcels
+            + Add Parcels
           </Button>
+
           <Button
             variant="outlined"
-            sx={{ fontWeight: "bold", width: 120 }}
+            sx={{
+              bgcolor: "#fff",
+              color: "#00b2e1",
+              fontWeight: "bold",
+              px: 3,
+              height: 45,
+              borderRadius: 2,
+              width: { xs: "100%", sm: 140 },
+              textTransform: "none",
+              border: "2px solid #00b2e1",
+              "&:hover": {
+                bgcolor: "#00b2e1",
+                color: "#fff",
+                boxShadow: "0px 4px 10px rgba(0,0,0,0.15)",
+              },
+            }}
             onClick={fetchParcels}
             disabled={loading}
           >
-            Refresh
+            {loading ? "Refreshing..." : "Refresh"}
           </Button>
         </Stack>
 
+        {/* CSV modal */}
         <CSVModal
           open={openCSVModal}
           handleClose={() => setOpenCSVModal(false)}
           onUpload={fetchParcels}
         />
 
+        {/* Parcel list */}
         {loading ? (
           <Box textAlign="center" my={4}>
             <CircularProgress />
@@ -209,7 +266,7 @@ export default function Parcels() {
             onRefresh={fetchParcels}
           />
         )}
-      </Stack>
-    </>
+      </Paper>
+    </Box>
   );
 }

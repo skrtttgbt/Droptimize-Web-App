@@ -53,7 +53,7 @@ export default function SidebarFooterAccount() {
   };
 
   return (
-    <Stack direction="column" sx={{ p: 2, width: "100%" }}>
+    <Stack direction="column" sx={{ width: "100%"}}>
       <MenuList>
         {user && (
           <MenuItem
@@ -64,6 +64,7 @@ export default function SidebarFooterAccount() {
               columnGap: 2,
               alignItems: "flex-start",
               textDecoration: "none",
+              py: 1.5,
             }}
           >
             <ListItemIcon>

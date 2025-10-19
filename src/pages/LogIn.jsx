@@ -3,7 +3,7 @@ import { Box, Paper, Stack, Typography, TextField, InputAdornment, IconButton, B
 import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { auth } from "/src/firebaseConfig";
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
+import { sendPasswordResetEmail } from "firebase/auth";
 import { checkAuth, loginUser } from "../firebaseConfig";
 
 export default function LogInForm() {
@@ -57,7 +57,7 @@ const handleSubmit = async (e) => {
   setLoading(true);
 
   try {
-    const { success, user, error } = await loginUser(
+    const { success, error } = await loginUser(
       trimmedData.email,
       trimmedData.password
     );

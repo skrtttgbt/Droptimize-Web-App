@@ -11,6 +11,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
   CircularProgress,
   List,
   ListItem,
@@ -19,12 +20,14 @@ import {
   Tab,
   Box,
   Typography,
+  Divider,
+  Stack,
 } from "@mui/material";
 
 // Haversine distance (km)
 function haversineDistanceKM(lat1, lon1, lat2, lon2) {
   const toRad = (x) => (x * Math.PI) / 180;
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a =
@@ -35,16 +38,19 @@ function haversineDistanceKM(lat1, lon1, lat2, lon2) {
 }
 
 export default function AssignDriverModal({ open, onClose, driver }) {
-  const [parcels, setParcels] = useState({ unassigned: [], assignedToDriver: [] });
+  const [parcels, setParcels] = useState({
+    unassigned: [],
+    assignedToDriver: [],
+  });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(0);
   const [userLocation, setUserLocation] = useState(null);
 
   const assumedSpeedKmh = 45;
   const allowanceMinutesPerParcel = 3;
+
   useEffect(() => {
     if (!navigator.geolocation) {
-      console.warn("Geolocation not supported");
       setUserLocation(null);
       return;
     }
@@ -56,16 +62,12 @@ export default function AssignDriverModal({ open, onClose, driver }) {
           longitude: pos.coords.longitude,
         });
       },
-      (err) => {
-        console.warn("Geolocation error:", err);
-        setUserLocation(null);
-      }
+      () => setUserLocation(null)
     );
   }, []);
 
   useEffect(() => {
     if (!driver) return;
-
     const parcelsRef = collection(db, "parcels");
 
     const unsub = onSnapshot(parcelsRef, (snapshot) => {
@@ -81,20 +83,25 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         region: (r.regionName || "").toLowerCase(),
       }));
 
-      const unassigned = allParcels.filter((p) => {
-        const isUnassigned = !p.driverUid && !p.driverName;
-        const matchesRoute = preferred.some(
-          (route) =>
-            (p.barangay || "").toLowerCase() === route.barangay &&
-            (p.municipality || "").toLowerCase() === route.municipality &&
-            (p.province || "").toLowerCase() === route.province &&
-            (p.region || "").toLowerCase() === route.region
+      const unassigned = allParcels
+        .filter(
+          (p) =>
+            p.status !== "Delivered" && // Filter out "Delivered" status
+            !p.driverUid &&
+            !p.driverName &&
+            preferred.some(
+              (route) =>
+                (p.barangay || "").toLowerCase() === route.barangay &&
+                (p.municipality || "").toLowerCase() === route.municipality &&
+                (p.province || "").toLowerCase() === route.province &&
+                (p.region || "").toLowerCase() === route.region
+            )
         );
-        return isUnassigned && matchesRoute;
-      });
 
       const assignedToDriver = allParcels.filter(
-        (p) => p.driverUid === driver.id
+        (p) =>
+          p.status !== "Delivered" && // Filter out "Delivered" status
+          p.driverUid === driver.id
       );
 
       setParcels({ unassigned, assignedToDriver });
@@ -105,7 +112,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
   }, [driver]);
 
   const computeTotalETA = (list) => {
-    if (!userLocation || !list || list.length === 0) return "N/A";
+    if (!userLocation || !list?.length) return "N/A";
 
     const destinations = list
       .filter(
@@ -119,9 +126,8 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         lng: p.destination.longitude,
       }));
 
-    if (destinations.length === 0) return "N/A";
+    if (!destinations.length) return "N/A";
 
-    // ---------- FASTEST ROUTE (Greedy Nearest Neighbor) ----------
     let fastRoute = [];
     let visited = new Array(destinations.length).fill(false);
     let current = { lat: userLocation.latitude, lng: userLocation.longitude };
@@ -129,23 +135,19 @@ export default function AssignDriverModal({ open, onClose, driver }) {
     for (let i = 0; i < destinations.length; i++) {
       let nearestIndex = -1;
       let minDist = Infinity;
-
       for (let j = 0; j < destinations.length; j++) {
         if (visited[j]) continue;
-
         const dist = haversineDistanceKM(
           current.lat,
           current.lng,
           destinations[j].lat,
           destinations[j].lng
         );
-
         if (dist < minDist) {
           minDist = dist;
           nearestIndex = j;
         }
       }
-
       if (nearestIndex !== -1) {
         visited[nearestIndex] = true;
         fastRoute.push(destinations[nearestIndex]);
@@ -153,7 +155,6 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       }
     }
 
-    // Calculate distance for fast route
     let fastDistance = 0;
     let lastFast = { lat: userLocation.latitude, lng: userLocation.longitude };
     for (const point of fastRoute) {
@@ -166,38 +167,18 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       lastFast = point;
     }
 
-    // ---------- SLOWEST ROUTE (Worst Order — no optimization) ----------
-    let slowDistance = 0;
-    let lastSlow = { lat: userLocation.latitude, lng: userLocation.longitude };
-    for (const point of destinations) {
-      slowDistance += haversineDistanceKM(
-        lastSlow.lat,
-        lastSlow.lng,
-        point.lat,
-        point.lng
-      );
-      lastSlow = point;
-    }
-
-    // Convert distances to minutes
     const fastMinutes =
       Math.round((fastDistance / assumedSpeedKmh) * 60) +
       allowanceMinutesPerParcel * destinations.length;
 
-    const slowMinutes =
-      Math.round((slowDistance / assumedSpeedKmh) * 60) +
-      allowanceMinutesPerParcel * destinations.length;
-
-    // Format time
     const formatTime = (mins) => {
       const h = Math.floor(mins / 60);
       const m = mins % 60;
       return h > 0 ? `${h}h ${m}m` : `${m}m`;
     };
 
-    return `${formatTime(fastMinutes)} – ${formatTime(slowMinutes)}`;
+    return formatTime(fastMinutes);
   };
-
 
   const handleAssign = async (parcel) => {
     try {
@@ -207,11 +188,8 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         assignedAt: serverTimestamp(),
         status: "Out for Delivery",
       });
-      //Assignment Success Message Here
-      alert(`Parcel ${parcel.reference} assigned to ${driver.fullName}`);
     } catch (error) {
       console.error("Error assigning parcel:", error);
-      alert(" Failed to assign parcel. Please try again.");
     }
   };
 
@@ -223,19 +201,22 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         assignedAt: null,
         status: "Pending",
       });
-      //Unassignment Success Message Here
-      alert(` Parcel ${parcel.reference} unassigned from ${driver.fullName}`);
     } catch (error) {
       console.error("Error unassigning parcel:", error);
-      alert("Failed to unassign parcel. Please try again.");
     }
   };
 
   const renderList = (list, type) => {
-    if (loading) return <CircularProgress />;
-    if (!list || list.length === 0)
+    if (loading)
       return (
-        <Typography variant="body2" color="text.secondary">
+        <Box display="flex" justifyContent="center" py={3}>
+          <CircularProgress />
+        </Box>
+      );
+
+    if (!list?.length)
+      return (
+        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
           {type === "unassigned"
             ? "No unassigned parcels match this driver’s route."
             : "No parcels have been assigned to this driver yet."}
@@ -243,42 +224,37 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       );
 
     return (
-      <List>
-        {list.map((parcel, idx) => (
+      <List dense disablePadding>
+        {list.map((parcel) => (
           <ListItem
             key={parcel.id}
-            secondaryAction={
-              type === "unassigned" ? (
-                <Button variant="contained" onClick={() => handleAssign(parcel)}>
-                  Assign
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  onClick={() => handleUnassign(parcel)}
-                >
-                  Unassign
-                </Button>
-              )
-            }
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              px: 2,
+              py: 1.5,
+              borderBottom: "1px solid #eee",
+            }}
           >
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                width: "100%",
-                alignItems: "center",
-              }}
-            >
-              <Typography>
-                {parcel.reference} – {parcel.barangay}, {parcel.municipality}
+            <Box>
+              <Typography fontWeight={500}>{parcel.reference}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {parcel.barangay}, {parcel.municipality}
               </Typography>
-              {/* Remove this line since computeETAForParcel is not defined */}
-              {/* <Typography variant="caption" color="text.secondary">
-                ETA: {computeETAForParcel(parcel, idx)}
-              </Typography> */}
             </Box>
+            <Button
+              variant={type === "unassigned" ? "contained" : "outlined"}
+              color={type === "unassigned" ? "primary" : "error"}
+              size="small"
+              onClick={() =>
+                type === "unassigned"
+                  ? handleAssign(parcel)
+                  : handleUnassign(parcel)
+              }
+            >
+              {type === "unassigned" ? "Assign" : "Unassign"}
+            </Button>
           </ListItem>
         ))}
       </List>
@@ -286,27 +262,54 @@ export default function AssignDriverModal({ open, onClose, driver }) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>
-        Manage Parcels for {driver?.fullName || "Driver"}
-
-        — Total ETA: {computeTotalETA(parcels.assignedToDriver)}
-
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="md"
+      sx={{
+        "& .MuiDialog-paper": {
+          borderRadius: 3,
+          p: 1,
+        },
+      }}
+    >
+      <DialogTitle sx={{ pb: 1 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Box>
+            <Typography variant="h6">
+              Manage Parcels — {driver?.fullName || "Driver"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Total ETA: {computeTotalETA(parcels.assignedToDriver)}
+            </Typography>
+          </Box>
+        </Stack>
       </DialogTitle>
 
+      <Divider />
 
-      <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth">
+      <Tabs
+        value={tab}
+        onChange={(e, v) => setTab(v)}
+        variant="fullWidth"
+        textColor="primary"
+        indicatorColor="primary"
+      >
         <Tab label="Unassigned Parcels" />
         <Tab label="Assigned Parcels" />
       </Tabs>
 
-      <DialogContent>
-        <Box sx={{ mt: 2 }}>
-          {tab === 0 && renderList(parcels.unassigned, "unassigned")}
-          {tab === 1 && renderList(parcels.assignedToDriver, "assigned")}
-        </Box>
+      <DialogContent dividers sx={{ minHeight: 300, p: 2 }}>
+        {tab === 0 && renderList(parcels.unassigned, "unassigned")}
+        {tab === 1 && renderList(parcels.assignedToDriver, "assigned")}
       </DialogContent>
 
+      <DialogActions>
+        <Button onClick={onClose} variant="outlined" color="primary">
+          Done
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

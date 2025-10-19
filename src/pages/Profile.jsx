@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Stack, TextField, Button, CircularProgress, Box, Typography } from "@mui/material";
+import {
+  Box,
+  Stack,
+  Typography,
+  TextField,
+  Button,
+  CircularProgress,
+  Divider,
+  Paper,
+} from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "/src/firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
@@ -41,7 +50,6 @@ export default function Profile() {
 
       setUserId(user.uid);
 
-      // Listen to User doc
       const userRef = doc(db, "users", user.uid);
       const unsubUser = onSnapshot(userRef, (snap) => {
         const data = snap.exists() ? snap.data() : {};
@@ -54,7 +62,6 @@ export default function Profile() {
           photoPath: data.photoPath || "",
         });
 
-        // Also listen to Branch doc if available
         if (data.branchId) {
           const branchRef = doc(db, "branches", data.branchId);
           onSnapshot(branchRef, (branchSnap) => {
@@ -80,7 +87,7 @@ export default function Profile() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (["companyName", "branchAddress", "operatingArea"].includes(name)) {
+    if (["branchName", "branchAddress", "operatingArea"].includes(name)) {
       setBranch((prev) => ({ ...prev, [name]: value }));
     } else {
       setProfile((prev) => ({ ...prev, [name]: value }));
@@ -91,7 +98,6 @@ export default function Profile() {
     if (!userId) return;
     setSaving(true);
     try {
-      // 🔹 Update personal info
       const userRef = doc(db, "users", userId);
       await setDoc(
         userRef,
@@ -103,7 +109,6 @@ export default function Profile() {
         { merge: true }
       );
 
-      // 🔹 Update branch info if admin has branch
       if (profile.branchId) {
         const branchRef = doc(db, "branches", profile.branchId);
         await setDoc(
@@ -135,11 +140,11 @@ export default function Profile() {
   }
 
   return (
-    <>
+    <Box sx={{ p: 3 }}>
       <Typography
         variant="h4"
         sx={{
-          margin: "1rem 0",
+          mb: 3,
           fontFamily: "Lexend",
           fontWeight: "bold",
           color: "#00b2e1",
@@ -148,107 +153,149 @@ export default function Profile() {
         Admin Profile
       </Typography>
 
-      <Stack spacing={3} maxWidth="500px" mx="auto" mt={3}>
-        <ProfilePhotoSelector
-          profile={profile}
-          setProfile={setProfile}
-          userId={userId}
-        />
+      <Paper
+        elevation={3}
+        sx={{
+          p: 3,
+          borderRadius: "16px",
+          backgroundColor: "#fff",
+          maxWidth: 700,
+          mx: "auto",
+        }}
+      >
+        <Stack spacing={3} alignItems="center">
+          <ProfilePhotoSelector profile={profile} setProfile={setProfile} userId={userId} />
 
-        {/* Personal fields */}
-        <TextField
-          label="Full Name"
-          name="fullName"
-          value={profile.fullName}
-          onChange={handleChange}
-          fullWidth
-          size="small"
-          disabled={!editing}
-        />
-        <TextField
-          label="Email"
-          name="email"
-          value={profile.email}
-          fullWidth
-          size="small"
-          disabled
-        />
-        <TextField
-          label="Contact Number"
-          name="contactNumber"
-          value={profile.contactNumber}
-          onChange={handleChange}
-          fullWidth
-          size="small"
-          disabled={!editing}
-        />
+          <Divider sx={{ width: "100%", my: 1 }} />
 
-        {/* Branch fields */}
-        <TextField
-          label="Branch Name"
-          name="branchName"
-          value={branch.branchName}
-          onChange={handleChange}
-          fullWidth
-          size="small"
-          disabled={!editing}
-        />
-        <TextField
-          label="Branch Address"
-          name="branchAddress"
-          value={branch.branchAddress}
-          onChange={handleChange}
-          fullWidth
-          size="small"
-          disabled={!editing}
-        />
-        <TextField
-          label="Operating Area"
-          name="operatingArea"
-          value={branch.operatingArea}
-          onChange={handleChange}
-          fullWidth
-          size="small"
-          disabled={!editing}
-        />
-
-        {editing ? (
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving}
+          {/* Personal Information */}
+          <Typography
+            variant="h6"
             sx={{
-              width: "200px",
               alignSelf: "flex-start",
-              backgroundColor: "#00b2e1",
-              "&:hover": { backgroundColor: "#0090b5" },
-              fontFamily: "LEMON MILK",
-              fontSize: "16px",
-              borderRadius: "10px",
-              textTransform: "none",
+              fontFamily: "Lexend",
+              fontWeight: 600,
+              color: "#333",
             }}
           >
-            {saving ? "Saving..." : "Save Changes"}
-          </Button>
-        ) : (
-          <Button
-            variant="contained"
-            onClick={() => setEditing(true)}
+            Personal Information
+          </Typography>
+
+          <Stack spacing={2} width="100%">
+            <TextField
+              label="Full Name"
+              name="fullName"
+              value={profile.fullName}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              disabled={!editing}
+            />
+            <TextField
+              label="Email"
+              name="email"
+              value={profile.email}
+              fullWidth
+              size="small"
+              disabled
+            />
+            <TextField
+              label="Contact Number"
+              name="contactNumber"
+              value={profile.contactNumber}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              disabled={!editing}
+            />
+          </Stack>
+
+          <Divider sx={{ width: "100%", my: 1 }} />
+
+          {/* Branch Information */}
+          <Typography
+            variant="h6"
             sx={{
-              width: "200px",
               alignSelf: "flex-start",
-              backgroundColor: "#00b2e1",
-              "&:hover": { backgroundColor: "#0090b5" },
-              fontFamily: "LEMON MILK",
-              fontSize: "16px",
-              borderRadius: "10px",
-              textTransform: "none",
+              fontFamily: "Lexend",
+              fontWeight: 600,
+              color: "#333",
             }}
           >
-            Edit Profile
-          </Button>
-        )}
-      </Stack>
-    </>
+            Branch Information
+          </Typography>
+
+          <Stack spacing={2} width="100%">
+            <TextField
+              label="Branch Name"
+              name="branchName"
+              value={branch.branchName}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              disabled={!editing}
+            />
+            <TextField
+              label="Branch Address"
+              name="branchAddress"
+              value={branch.branchAddress}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              disabled={!editing}
+            />
+            <TextField
+              label="Operating Area"
+              name="operatingArea"
+              value={branch.operatingArea}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              disabled={!editing}
+            />
+          </Stack>
+
+          {/* Buttons */}
+          <Box display="flex" justifyContent="flex-end" width="100%" mt={2}>
+            {editing ? (
+              <Button
+                variant="contained"
+                onClick={handleSave}
+                disabled={saving}
+                sx={{
+                  width: 150,
+                  backgroundColor: "#00b2e1",
+                  "&:hover": { backgroundColor: "#00a1d6" },
+                  fontFamily: "Lexend",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  borderRadius: "10px",
+                  textTransform: "none",
+                }}
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                onClick={() => setEditing(true)}
+                sx={{
+                  width: 150,
+                  backgroundColor: "#00b2e1",
+                  "&:hover": { backgroundColor: "#00a1d6" },
+                  fontFamily: "Lexend",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  borderRadius: "10px",
+                  textTransform: "none",
+                }}
+              >
+                Edit Profile
+              </Button>
+            )}
+          </Box>
+        </Stack>
+      </Paper>
+    </Box>
   );
 }

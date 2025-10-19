@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Paper,
   Typography,
@@ -5,98 +6,139 @@ import {
   Avatar,
   Chip,
   Grid,
-  Tooltip,
   Button,
   Stack,
 } from "@mui/material";
-import WarningIcon from "@mui/icons-material/WarningAmber";
-import MapIcon from "@mui/icons-material/Map";
-import ReportProblemIcon from "@mui/icons-material/ReportProblem";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import DriverDetailsModal from "./DriverDetailsModal";
 
 export default function DriverList({
   drivers = [],
   onAssignParcel,
+  onGiveWarning,
+  onViewMap,
 }) {
+  const [selectedDriver, setSelectedDriver] = useState(null);
+
   const statusColors = {
     available: "#29bf12",
     delivering: "#ff9914",
     offline: "#c4cad0",
   };
 
+  // Group drivers by status
   const groupedDrivers = { Available: [], Delivering: [], Offline: [] };
-
   drivers.forEach((driver) => {
-    const safeStatus = (driver.status || "offline").toLowerCase();
-    if (safeStatus === "available") groupedDrivers.Available.push(driver);
-    else if (safeStatus === "delivering") groupedDrivers.Delivering.push(driver);
+    const status = (driver?.status || "offline").toLowerCase();
+    if (status === "available") groupedDrivers.Available.push(driver);
+    else if (status === "delivering") groupedDrivers.Delivering.push(driver);
     else groupedDrivers.Offline.push(driver);
   });
 
-  if (drivers.length === 0) {
-    return (
-      <Typography
-        variant="body2"
-        color="textSecondary"
-        fontSize={16}
-        align="center"
-        sx={{ mt: 4 }}
-      >
-        No drivers found.
-      </Typography>
-    );
-  }
-
   const getDisplayName = (d) =>
-    `${d.firstName || ""} ${d.lastName || ""}`.trim() || "Unnamed Driver";
+    `${d?.firstName || ""} ${d?.lastName || ""}`.trim() ||
+    d?.displayName ||
+    d?.fullName ||
+    "Unnamed Driver";
+
+  const getAvatarSrc = (driver) =>
+    driver?.avatar || driver?.photoURL || driver?.profilePhoto || driver?.image || "";
+
+  const handleCardClick = (driver) => {
+    setSelectedDriver(driver);
+  };
+
+  const handleAssignClick = (e, driver) => {
+    e.stopPropagation();
+    onAssignParcel?.(driver);
+  };
 
   const renderDriverCard = (driver) => {
-    const displayStatus = (driver.status || "offline").toLowerCase();
+    const displayStatus = (driver?.status || "offline").toLowerCase();
+    const avatarSrc = getAvatarSrc(driver);
+    const key = driver?.id || driver?.uid || Math.random();
 
     return (
-      <Grid item xs={12} md={6} lg={4} key={driver.id}>
+      <Grid key={key}>
         <Paper
-          elevation={2}
+          elevation={3}
+          onClick={() => handleCardClick(driver)}
           sx={{
+            width: 340, // 🔹 fixed absolute width
+            height: 160,
             display: "flex",
-            flexDirection: "row",
             alignItems: "center",
             gap: 2,
             p: 2,
-            height: "100%",
+            borderRadius: 2,
+            cursor: "pointer",
+            transition: "background-color 0.15s ease",
+            "&:hover": { backgroundColor: "#fafafa" },
+            boxSizing: "border-box",
           }}
         >
           <Avatar
-            src={driver.avatar || ""}
+            src={avatarSrc}
             alt={getDisplayName(driver)}
-            sx={{ width: 56, height: 56 }}
-          />
-          <Box flex={1}>
-            <Typography variant="subtitle1" fontWeight="bold">
-              {getDisplayName(driver)}
-            </Typography>
-            <Typography variant="body2" color="textSecondary">
-              ID: {driver.id}
-            </Typography>
-            {driver.phoneNumber && (
-              <Typography variant="body2" color="textSecondary">
-                Contact: {driver.phoneNumber}
-              </Typography>
-            )}
-            {driver.email && (
-              <Typography variant="body2" color="textSecondary">
-                Email: {driver.email}
-              </Typography>
-            )}
+            sx={{ width: 56, height: 56, bgcolor: "#c4cad0", flexShrink: 0 }}
+            imgProps={{
+              onError: (ev) => {
+                ev.currentTarget.style.display = "none";
+              },
+            }}
+          >
+            {getDisplayName(driver).slice(0, 1)}
+          </Avatar>
 
-            {/* ✅ Status + Speed */}
+          <Box
+            flex={1}
+            minWidth={0}
+            display="flex"
+            flexDirection="column"
+            justifyContent="space-between"
+            height="100%"
+          >
+            <Box>
+              <Typography
+                variant="h6"
+                fontWeight="bold"
+                noWrap
+                title={getDisplayName(driver)}
+              >
+                {getDisplayName(driver)}
+              </Typography>
+
+              <Typography variant="body2" color="textSecondary" noWrap>
+                ID: {driver?.id || driver?.uid || "N/A"}
+              </Typography>
+
+              {driver?.phoneNumber && (
+                <Typography variant="body2" color="textSecondary" noWrap>
+                  Contact: {driver.phoneNumber}
+                </Typography>
+              )}
+
+              {displayStatus === "delivering" &&
+                typeof driver?.speed === "number" && (
+                  <Typography
+                    variant="body2"
+                    color={
+                      driver?.speed > (driver?.speedLimit || 25)
+                        ? "#f21b3f"
+                        : "#29bf12"
+                    }
+                  >
+                    Speed: {driver.speed} km/h
+                  </Typography>
+                )}
+            </Box>
+
             <Box
               sx={{
                 display: "flex",
                 alignItems: "center",
-                gap: 1,
+                justifyContent: "space-between",
                 mt: 1,
-                flexWrap: "wrap",
               }}
             >
               <Chip
@@ -109,31 +151,22 @@ export default function DriverList({
                 }}
               />
 
-              {displayStatus === "delivering" &&
-                typeof driver.speed === "number" && (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      {driver.speed} km/h
-                    </Typography>
-                  </Box>
-                )}
-            </Box>
-
-            
-            {displayStatus === "available" && (
-              <Stack direction="row" spacing={1} mt={1}>
+              {displayStatus === "available" && (
                 <Button
                   size="small"
                   variant="contained"
-                  color="primary"
                   startIcon={<LocalShippingIcon />}
-                  onClick={() => onAssignParcel?.(driver)}
-                  sx={{ textTransform: "none" }}
+                  onClick={(e) => handleAssignClick(e, driver)}
+                  sx={{
+                    textTransform: "none",
+                    borderRadius: 1.5,
+                    fontWeight: 500,
+                  }}
                 >
-                  Assign Parcels
+                  Assign
                 </Button>
-              </Stack>
-            )}
+              )}
+            </Box>
           </Box>
         </Paper>
       </Grid>
@@ -142,21 +175,66 @@ export default function DriverList({
 
   return (
     <>
-      {Object.entries(groupedDrivers).map(([status, list]) =>
-        list.length > 0 ? (
-          <Box key={status} mb={4}>
-            <Typography
-              variant="h5"
-              gutterBottom
-              sx={{ color: "#0064b5", fontWeight: "bold" }}
-            >
-              {status} Drivers
-            </Typography>
-            <Grid container spacing={2}>
-              {list.map(renderDriverCard)}
-            </Grid>
-          </Box>
-        ) : null
+      <Box
+        sx={{
+          width: "100%",
+          height: "calc(100vh - 180px)",
+          overflowY: "auto",
+          pr: 1,
+          pb: 2,
+        }}
+      >
+        <Stack spacing={4} sx={{ width: "100%" }}>
+          {Object.entries(groupedDrivers).map(([status, list]) =>
+            list.length > 0 ? (
+              <Box key={status} sx={{ width: "100%" }}>
+                <Typography
+                  variant="h5"
+                  gutterBottom
+                  sx={{
+                    color: "#00b2e1",
+                    fontWeight: "bold",
+                    mb: 2,
+                    px: 1,
+                  }}
+                >
+                  {status} Drivers
+                </Typography>
+                <Grid
+                  container
+                  spacing={2}
+                  sx={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "flex-start",
+                  }}
+                >
+                  {list.map((driver) => renderDriverCard(driver))}
+                </Grid>
+              </Box>
+            ) : null
+          )}
+        </Stack>
+      </Box>
+
+      {selectedDriver && (
+        <DriverDetailsModal
+          open={!!selectedDriver}
+          driver={selectedDriver}
+          onClose={() => setSelectedDriver(null)}
+          onAssignParcel={(driver) => {
+            setSelectedDriver(null);
+            onAssignParcel?.(driver);
+          }}
+          onGiveWarning={(driver) => {
+            setSelectedDriver(null);
+            onGiveWarning?.(driver);
+          }}
+          onViewMap={(driver) => {
+            setSelectedDriver(null);
+            onViewMap?.(driver);
+          }}
+        />
       )}
     </>
   );

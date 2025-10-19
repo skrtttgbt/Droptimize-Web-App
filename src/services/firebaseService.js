@@ -1,60 +1,54 @@
-import { collection, getDocs, query, where, orderBy, limit, doc, setDoc, Timestamp, deleteDoc, getDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
+  doc,
+  setDoc,
+  Timestamp,
+  deleteDoc,
+  getDoc,
+  updateDoc,
+  increment,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
 export const fetchAllParcels = async (uid = null) => {
   try {
     const parcels = [];
-    if (uid) {
-      const parcelsRef = collection(db, 'parcels');
-      const parcelsSnapshot = await getDocs(parcelsRef);
+    const parcelsRef = collection(db, "parcels");
+    const parcelsSnapshot = await getDocs(parcelsRef);
 
-      if (parcelsSnapshot.empty) {
-        return parcels;
-      }
+    if (parcelsSnapshot.empty) return parcels;
 
-      for (const parcelDoc of parcelsSnapshot.docs) {
-        const parcelId = parcelDoc.id;
-        const parcelData = parcelDoc.data();
+    for (const parcelDoc of parcelsSnapshot.docs) {
+      const parcelId = parcelDoc.id;
+      const parcelData = parcelDoc.data();
 
-        if (parcelData.uid === uid) {
-          parcels.push({
-            id: parcelId,
-            reference: parcelData.reference || '',
-            status: parcelData.status || 'Pending',
-            recipient: parcelData.recipient || '',
-            street: parcelData.street || '',
-            region: parcelData.region || '',
-            city: parcelData.city || '',
-            province: parcelData.province || '',
-            barangay: parcelData.barangay || '',
-            dateAdded: parcelData.dateAdded?.toDate() || new Date(),
-            userId: uid
-          });
-        }
-      }
-    } else {
-      const parcelsRef = collection(db, 'parcels');
-      const parcelsSnapshot = await getDocs(parcelsRef);
+      if (uid && parcelData.uid !== uid) continue;
 
-      for (const parcelDoc of parcelsSnapshot.docs) {
-        const parcelId = parcelDoc.id;
-        const parcelData = parcelDoc.data();
-
-        parcels.push({
-          id: parcelId,
-          reference: parcelData.reference || '',
-          status: parcelData.status || 'Pending',
-          recipient: parcelData.recipient || '',
-          address: parcelData.address || '',
-          dateAdded: parcelData.dateAdded?.toDate() || new Date(),
-          userId: parcelData.uid || ''
-        });
-      }
+      parcels.push({
+        id: parcelId, 
+        reference: parcelId || "",
+        status: parcelData.status || "Pending",
+        recipient: parcelData.recipient || "",
+        recipientContact: parcelData.recipientContact || "",
+        street: parcelData.street || "",
+        barangay: parcelData.barangay || "",
+        municipality: parcelData.municipality || "",
+        province: parcelData.province || "",
+        region: parcelData.region || "",
+        dateAdded: parcelData.dateAdded?.toDate() || new Date(),
+        userId: parcelData.uid || "",
+      });
     }
 
     return parcels;
   } catch (error) {
-    console.error('Error fetching parcels:', error);
+    console.error("Error fetching parcels:", error);
     return [];
   }
 };
@@ -66,9 +60,8 @@ export const fetchParcelStatusData = async (uid = null) => {
     let failedOrReturned = 0;
     let pending = 0;
 
-    const parcelsRef = collection(db, 'parcels');
+    const parcelsRef = collection(db, "parcels");
     const parcelsSnapshot = await getDocs(parcelsRef);
-    console.log(parcelsSnapshot)
 
     if (parcelsSnapshot.empty) {
       return { delivered: 0, outForDelivery: 0, failedOrReturned: 0, pending: 0, total: 0 };
@@ -76,23 +69,20 @@ export const fetchParcelStatusData = async (uid = null) => {
 
     for (const parcelDoc of parcelsSnapshot.docs) {
       const parcelData = parcelDoc.data();
-      console.log()
-      if (uid && parcelData.uid !== uid) {
-        continue;
-      }
-      console.log(parcelData.status.toLowerCase())
+      if (uid && parcelData.uid !== uid) continue;
+
       switch (parcelData.status?.toLowerCase()) {
-        case 'delivered':
+        case "delivered":
           delivered++;
           break;
-        case 'out for delivery':
+        case "out for delivery":
           outForDelivery++;
           break;
-        case 'failed':
-        case 'returned':
+        case "failed":
+        case "returned":
           failedOrReturned++;
           break;
-        case 'pending':
+        case "pending":
         default:
           pending++;
           break;
@@ -104,37 +94,38 @@ export const fetchParcelStatusData = async (uid = null) => {
       outForDelivery,
       failedOrReturned,
       pending,
-      total: delivered + outForDelivery + failedOrReturned + pending
+      total: delivered + outForDelivery + failedOrReturned + pending,
     };
   } catch (error) {
-    console.error('Error fetching parcel status data:', error);
+    console.error("Error fetching parcel status data:", error);
     return { delivered: 0, outForDelivery: 0, failedOrReturned: 0, pending: 0, total: 0 };
   }
 };
 
+// ======================== ADD PARCEL ========================
 export const addParcel = async (parcelData, uid) => {
   try {
     if (!uid) throw new Error("User ID (uid) is required to add a parcel");
 
-    // Use current time
     const now = new Date();
     const parcelId =
       parcelData.id ||
       `PKG${Math.floor(Math.random() * 1_000_000)
         .toString()
-        .padStart(6, "0")}`; 
+        .padStart(6, "0")}`;
+
     const dataToStore = {
       uid,
       packageId: parcelId,
-      reference: parcelData.reference || "",
+      reference: parcelId|| "",
       status: parcelData.status || "Pending",
       recipient: parcelData.recipient || "",
-      contact: parcelData.contact || "",
+      recipientContact: parcelData.recipientContact || "",
       street: parcelData.street || "",
-      region: parcelData.region || "",
-      province: parcelData.province || "",
-      municipality: parcelData.municipality || "",
       barangay: parcelData.barangay || "",
+      municipality: parcelData.municipality || "",
+      province: parcelData.province || "",
+      region: parcelData.region || "",
       dateAdded: parcelData.dateAdded || Timestamp.fromDate(now),
       createdAt: Timestamp.fromDate(now),
       destination: parcelData.destination || "",
@@ -154,6 +145,8 @@ export const addParcel = async (parcelData, uid) => {
     return { success: false, error: error.message };
   }
 };
+
+// ======================== UPDATE PARCEL ========================
 export const updateParcel = async (parcelData, parcelId) => {
   try {
     if (!parcelId) throw new Error("Parcel ID is required to update a parcel");
@@ -184,6 +177,7 @@ export const updateParcel = async (parcelData, parcelId) => {
   }
 };
 
+// ======================== DELETE PARCEL ========================
 export const deleteParcel = async (parcelId) => {
   try {
     if (!parcelId) throw new Error("Parcel ID is required to delete a parcel");
@@ -194,6 +188,8 @@ export const deleteParcel = async (parcelId) => {
     return { success: false, error: err.message };
   }
 };
+
+// ======================== ASSIGN PARCEL TO DRIVER ========================
 export async function assignParcelToDriver(parcelId, driverId) {
   const parcelRef = doc(db, "parcels", parcelId);
   const driverRef = doc(db, "users", driverId);
@@ -204,7 +200,6 @@ export async function assignParcelToDriver(parcelId, driverId) {
     updatedAt: serverTimestamp(),
   });
 
-
   await updateDoc(driverRef, {
     parcelsLeft: increment(1),
     updatedAt: serverTimestamp(),
@@ -213,48 +208,65 @@ export async function assignParcelToDriver(parcelId, driverId) {
   return true;
 }
 
+// ======================== GET PARCEL ========================
 export const getParcel = async (parcelId) => {
   try {
-    if (!parcelId) {
-      throw new Error('Parcel ID is required to get a parcel');
-    }
+    if (!parcelId) throw new Error("Parcel ID is required to get a parcel");
 
     const parcelDocRef = doc(db, `parcels/${parcelId}`);
     const parcelDoc = await getDoc(parcelDocRef);
 
     if (!parcelDoc.exists()) {
-      return {
-        success: false,
-        error: 'Parcel not found'
-      };
+      return { success: false, error: "Parcel not found" };
     }
+
     const parcelData = parcelDoc.data();
     return {
       success: true,
       data: {
         id: parcelId,
-        reference: parcelData.reference || '',
-        status: parcelData.status || 'Pending',
-        recipient: parcelData.recipient || '',
-        address: parcelData.address || '',
+        reference: parcelData.reference || "",
+        status: parcelData.status || "Pending",
+        recipient: parcelData.recipient || "",
+        recipientContact: parcelData.recipientContact || "",
+        street: parcelData.street || "",
+        barangay: parcelData.barangay || "",
+        municipality: parcelData.municipality || "",
+        province: parcelData.province || "",
+        region: parcelData.region || "",
         dateAdded: parcelData.dateAdded?.toDate() || new Date(),
-        userId: parcelData.uid || ''
-      }
+        userId: parcelData.uid || "",
+      },
     };
   } catch (error) {
-    console.error('Error getting parcel:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error("Error getting parcel:", error);
+    return { success: false, error: error.message };
   }
 };
 
-// Fetch driver status data
+// ======================== DRIVER STATUS DATA ========================
 export const fetchDriverStatusData = async () => {
   try {
-    const driversRef = collection(db, 'drivers');
-    const driversSnapshot = await getDocs(driversRef);
+    // Parse the branch data from localStorage
+    const branch = JSON.parse(localStorage.getItem("branch"));
+    
+    // Check if branch and branchId are valid
+    if (!branch || !branch.branchId) {
+      console.error("Branch data is missing or invalid in localStorage.");
+      return { available: 0, onTrip: 0, offline: 0 };
+    }
+
+    console.log("Fetched branch from localStorage:", branch);
+
+    // Firestore query to get drivers with role "driver" and matching branchId
+    const driversRef = collection(db, "users");
+    const driverDoc = query(
+      driversRef,
+      where("role", "==", "driver"),
+      where("branchId", "==", branch.branchId)
+    );
+
+    const driversSnapshot = await getDocs(driverDoc);
 
     let available = 0;
     let onTrip = 0;
@@ -263,13 +275,13 @@ export const fetchDriverStatusData = async () => {
     driversSnapshot.forEach((doc) => {
       const driver = doc.data();
       switch (driver.status?.toLowerCase()) {
-        case 'available':
+        case "available":
           available++;
           break;
-        case 'delivering':
+        case "delivering":
           onTrip++;
           break;
-        case 'offline':
+        case "offline":
         default:
           offline++;
           break;
@@ -278,67 +290,67 @@ export const fetchDriverStatusData = async () => {
 
     return { available, onTrip, offline };
   } catch (error) {
-    console.error('Error fetching driver status data:', error);
+    console.error("Error fetching driver status data:", error);
     return { available: 0, onTrip: 0, offline: 0 };
   }
 };
 
-export const fetchDeliveryVolumeData = async (period = 'daily') => {
+export const fetchDeliveryVolumeData = async ( period = "daily", uid) => {
   try {
-    const deliveriesRef = collection(db, 'deliveries');
-    const deliveriesSnapshot = await getDocs(deliveriesRef);
+    const parcelsRef = collection(db, "parcels");
+    const q = query(
+      parcelsRef,
+      where("status", "in", ["Delivered", "Cancelled"]), 
+      where("uid", "==", uid) 
+    );
 
-    // Process data based on period (daily/weekly)
+    const parcelsSnapshot = await getDocs(q);
     const deliveryData = {};
 
-    deliveriesSnapshot.forEach((doc) => {
-      const delivery = doc.data();
-      const date = new Date(delivery.date?.toDate() || delivery.date);
-
+    parcelsSnapshot.forEach((doc) => {
+      const parcel = doc.data();
+      const date = new Date(parcel.date?.toDate() || parcel.date);
       if (!date || isNaN(date.getTime())) return;
 
-      let dateKey;
-      if (period === 'daily') {
-        dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
-      } else {
-        const weekNumber = getWeekNumber(date);
-        dateKey = `Week ${weekNumber}`;
-      }
+      let dateKey =
+        period === "daily"
+          ? date.toISOString().split("T")[0]
+          : `Week ${getWeekNumber(date)}`;
 
       if (!deliveryData[dateKey]) {
         deliveryData[dateKey] = {
           date: dateKey,
           deliveries: 0,
-          failedOrReturned: 0
+          failedOrReturned: 0,
         };
       }
 
       deliveryData[dateKey].deliveries++;
-
-      if (delivery.status === 'failed' || delivery.status === 'returned') {
+      if (parcel.status === "cancelled") {
         deliveryData[dateKey].failedOrReturned++;
       }
     });
 
-    const result = Object.values(deliveryData).map(item => {
-      const successRate = ((item.deliveries - item.failedOrReturned) / item.deliveries) * 100;
+    const result = Object.values(deliveryData).map((item) => {
+      const successRate =
+        ((item.deliveries - item.failedOrReturned) / item.deliveries) * 100;
       return {
         ...item,
-        successRate: isNaN(successRate) ? 0 : successRate.toFixed(2)
+        successRate: isNaN(successRate) ? 0 : successRate.toFixed(2),
       };
     });
 
-    // Sort by date
     return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch (error) {
-    console.error('Error fetching delivery volume data:', error);
+    console.error("Error fetching delivery volume data:", error);
     return [];
   }
 };
 
-export const fetchOverspeedingData = async (period = 'daily') => {
+// ======================== OVERSPEEDING DATA ========================
+export const fetchOverspeedingData = async (period = "daily") => {
   try {
-    const incidentsRef = collection(db, 'speedingIncidents');
+    const incidentsRef = collection(db, "users");
     const incidentsSnapshot = await getDocs(incidentsRef);
 
     const incidentData = {};
@@ -346,24 +358,19 @@ export const fetchOverspeedingData = async (period = 'daily') => {
     incidentsSnapshot.forEach((doc) => {
       const incident = doc.data();
       const date = new Date(incident.timestamp?.toDate() || incident.timestamp);
-
       if (!date || isNaN(date.getTime())) return;
 
-      let dateKey;
-      if (period === 'daily') {
-        dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
-      } else {
-
-        const weekNumber = getWeekNumber(date);
-        dateKey = `Week ${weekNumber}`;
-      }
+      let dateKey =
+        period === "daily"
+          ? date.toISOString().split("T")[0]
+          : `Week ${getWeekNumber(date)}`;
 
       if (!incidentData[dateKey]) {
         incidentData[dateKey] = {
           date: dateKey,
           incidents: 0,
           totalSpeed: 0,
-          speedReadings: 0
+          speedReadings: 0,
         };
       }
 
@@ -375,48 +382,80 @@ export const fetchOverspeedingData = async (period = 'daily') => {
       }
     });
 
-    const result = Object.values(incidentData).map(item => {
-      const avgSpeed = item.speedReadings > 0 ? item.totalSpeed / item.speedReadings : 0;
+    const result = Object.values(incidentData).map((item) => {
+      const avgSpeed =
+        item.speedReadings > 0 ? item.totalSpeed / item.speedReadings : 0;
       return {
         date: item.date,
         incidents: item.incidents,
-        avgSpeed: Math.round(avgSpeed)
+        avgSpeed: Math.round(avgSpeed),
       };
     });
 
     return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch (error) {
-    console.error('Error fetching overspeeding data:', error);
+    console.error("Error fetching overspeeding data:", error);
     return [];
   }
 };
 
-
-export const fetchRecentIncidents = async (limit = 5) => {
+// ======================== RECENT INCIDENTS ========================
+export const fetchRecentIncidents = async (limitCount = 5) => {
   try {
-    const incidentsRef = collection(db, 'users');
-    const q = query(incidentsRef, orderBy('timestamp', 'desc'), limit(limit));
-    const incidentsSnapshot = await getDocs(q);
+    const branch = JSON.parse(localStorage.getItem("branch"));
 
-    const incidents = [];
-    incidentsSnapshot.forEach((doc) => {
-      const incident = doc.data();
-      incidents.push({
-        id: doc.id,
-        date: incident.timestamp?.toDate().toLocaleDateString() || 'Unknown',
-        location: incident.location || 'Unknown location',
-        driverName: incident.driverName || 'Unknown driver',
-        speed: incident.speed || 0
+    if (!branch || !branch.branchId) {
+      console.error("Branch data is missing or invalid in localStorage.");
+      return [];
+    }
+
+    // Get all drivers in this branch
+    const usersRef = collection(db, "users");
+    const usersQuery = query(
+      usersRef,
+      where("role", "==", "driver"),
+      where("branchId", "==", branch.branchId)
+    );
+
+    const usersSnapshot = await getDocs(usersQuery);
+
+    const violations = [];
+
+    // Loop through each driver document
+    usersSnapshot.forEach((userDoc) => {
+      const userData = userDoc.data();
+      const driverViolations = userData.violations || [];
+
+      driverViolations.forEach((violation) => {
+        violations.push({
+          id: `${userDoc.id}_${violation.timestamp || Date.now()}`,
+          date: violation.issuedAt
+            ? (violation.issuedAt.toDate
+                ? violation.issuedAt.toDate().toLocaleString()
+                : new Date(violation.issuedAt).toLocaleString())
+            : "Unknown",
+          location: violation.driverLocation
+            ? `${violation.driverLocation.latitude}, ${violation.driverLocation.longitude}`
+            : "Unknown location",
+          driverName: userData.fullName || "Unknown driver",
+          message: violation.message || "No message",
+          topSpeed: violation.topSpeed || 0,
+          avgSpeed: violation.avgSpeed || 0,
+        });
       });
     });
 
-    return incidents;
+    // Sort by date (most recent first)
+    return violations.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
   } catch (error) {
-    console.error('Error fetching recent incidents:', error);
+    console.error("Error fetching recent violations:", error);
     return [];
   }
 };
 
+// ======================== UTIL: WEEK NUMBER ========================
 function getWeekNumber(date) {
   const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
   const pastDaysOfYear = (date - firstDayOfYear) / 86400000;

@@ -2,7 +2,7 @@ import { Paper, Typography, List, ListItem, ListItemText, Box, Chip } from "@mui
 
 export default function RecentIncidentCard({ incidents = [] }) {
   return (
-    <Paper elevation={3} sx={{ p: 2, height: "100%" }}>
+    <Paper elevation={3} sx={{ p: 2, height: 350, width: 300, mx: "auto"}}>
       <Typography variant="h6" gutterBottom>
         Recent Incidents
       </Typography>
@@ -22,7 +22,7 @@ export default function RecentIncidentCard({ incidents = [] }) {
                     <Chip 
                       size="small" 
                       color="error" 
-                      label={`${incident.speed} km/h`} 
+                      label={`${incident.topSpeed} km/h`} 
                       sx={{ height: 20 }}
                     />
                   </Box>

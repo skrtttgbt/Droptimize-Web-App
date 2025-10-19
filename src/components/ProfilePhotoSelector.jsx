@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Avatar, Button, Stack } from "@mui/material";
+import { Avatar, Button, Stack, Box, Typography, CircularProgress } from "@mui/material";
 import { db, storage } from "/src/firebaseConfig";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { doc, setDoc } from "firebase/firestore";
@@ -11,15 +11,15 @@ export default function ProfilePhotoSelector({ profile, setProfile, userId }) {
     const file = e.target.files?.[0];
     if (!file || !userId) return;
 
-    try {
-      setUploading(true);
+    setUploading(true);
 
-      // Delete old photo from storage if exists
+    try {
+      // Delete old photo (optional)
       if (profile.photoPath) {
         try {
           await deleteObject(ref(storage, profile.photoPath));
         } catch (err) {
-          console.warn("Delete previous photo failed:", err?.message);
+          console.warn("No previous photo to delete:", err?.message);
         }
       }
 
@@ -27,14 +27,10 @@ export default function ProfilePhotoSelector({ profile, setProfile, userId }) {
       const ext = file.name.split(".").pop() || "jpg";
       const path = `users/${userId}/profile-${Date.now()}.${ext}`;
       const storageRef = ref(storage, path);
-
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
 
-      // Update local state (for instant preview)
-      setProfile((prev) => ({ ...prev, photoURL: url, photoPath: path }));
-
-      // Persist directly to Firestore (standalone save)
+      // Update Firestore (merge ensures doc is created if missing)
       const userRef = doc(db, "users", userId);
       await setDoc(
         userRef,
@@ -45,8 +41,18 @@ export default function ProfilePhotoSelector({ profile, setProfile, userId }) {
         },
         { merge: true }
       );
+
+      // Update state for instant UI feedback
+      setProfile((prev) => ({
+        ...prev,
+        photoURL: url,
+        photoPath: path,
+      }));
+
+      console.log("✅ Profile photo updated successfully.");
     } catch (err) {
-      console.error("Upload error:", err?.message || err);
+      console.error("❌ Upload failed:", err);
+      alert("Upload failed — please try again.");
     } finally {
       setUploading(false);
     }
@@ -55,36 +61,82 @@ export default function ProfilePhotoSelector({ profile, setProfile, userId }) {
   const previewSrc = profile.photoURL || "/default-avatar.png";
 
   return (
-    <Stack direction="row" spacing={2} alignItems="center">
-      <Avatar
-        src={previewSrc}
-        alt={profile.fullName || "Profile Photo"}
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 2,
+        p: 2,
+      }}
+    >
+      <Box
         sx={{
-          width: 80,
-          height: 80
+          position: "relative",
+          width: 120,
+          height: 120,
         }}
-      />
+      >
+        <Avatar
+          src={previewSrc}
+          alt={profile.fullName || "Profile Photo"}
+          sx={{
+            width: 120,
+            height: 120,
+            border: "4px solid #c4cad0",
+            transition: "0.3s",
+            "&:hover": {
+              borderColor: "#00b2e1",
+              transform: "scale(1.05)",
+            },
+          }}
+        />
+        {uploading && (
+          <CircularProgress
+            size={40}
+            sx={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              color: "#00b2e1",
+            }}
+          />
+        )}
+      </Box>
+
       <Button
-        variant="outlined"
+        variant="contained"
         component="label"
         disabled={uploading}
         sx={{
-          borderColor: "#00b2e1",
-          color: "#00b2e1",
-          fontFamily: "LEMON MILK",
-          fontSize: "14px",
+          backgroundColor: "#00b2e1",
+          "&:hover": { backgroundColor: "#00a1d6" },
+          fontFamily: "Lexend",
+          fontWeight: 600,
+          fontSize: "1rem",
           borderRadius: "10px",
           textTransform: "none",
-          "&:hover": {
-            borderColor: "#0064b5",
-            color: "#0064b5",
-            backgroundColor: "rgba(0, 178, 225, 0.04)",
-          },
+          px: 3,
+          py: 1,
         }}
       >
-        {uploading ? "Uploading…" : "Upload Photo"}
+        {uploading ? "Uploading…" : "Change Photo"}
         <input type="file" accept="image/*" hidden onChange={handleFileChange} />
       </Button>
-    </Stack>
+
+      <Typography
+        variant="h5"
+        sx={{
+          mt: 1,
+          fontFamily: "Lexend",
+          fontWeight: 700,
+          color: "#333",
+          textAlign: "center",
+        }}
+      >
+        {profile.fullName || "Admin User"}
+      </Typography>
+    </Box>
   );
 }

@@ -1,70 +1,130 @@
-import { useEffect, useState, useCallback } from "react";
-import { Grid, Typography } from "@mui/material";
-import { auth, db } from "/src/firebaseConfig";
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  Box,
+  Typography,
+  Paper,
+  Drawer,
+  IconButton,
+  Fab,
+  Tooltip,
+  Divider,
+} from "@mui/material";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
+import MyLocationIcon from "@mui/icons-material/MyLocation";
+
+import { auth } from "/src/firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 
 import MapComponent from "/src/components/MapComponent.jsx";
 import DriverListPanel from "/src/components/DriverListPanel.jsx";
 
 export default function MapView() {
-  useEffect(() => {
-    document.title = "View Map";
-  }, []);
-
   const [user, setUser] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState(null);
 
+  const mapRef = useRef(null);
+
   useEffect(() => {
+    document.title = "Map View";
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
-
-  const handleDriverSelect = useCallback(
-    (driver) => {
-      setSelectedDriver(driver);
-    },
-    []
-  );
-
-
-  const handleGiveWarning = async (driver) => {
-    try {
-      const driverRef = doc(db, "users", driver.id);
-      await driverRef.update({
-        warnings: driver.warnings ? [...driver.warnings, { timestamp: new Date() }] : [{ timestamp: new Date() }],
-      });
-      alert(`⚠️ Warning issued to ${driver.fullName}`);
-    } catch (err) {
-      console.error("Failed to give warning:", err);
-      alert("Error sending warning. Check console for details.");
-    }
-  };
+  const handleDriverSelect = useCallback((driver) => {
+    setSelectedDriver(driver);
+    setDrawerOpen(false);
+  }, []);
 
   return (
-    <>
+    <Box
+      sx={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        p: 3,
+        boxSizing: "border-box",
+      }}
+    >
+      {/* Header */}
       <Typography
         variant="h4"
-        sx={{ margin: "1rem 0", fontFamily: "Lexend", fontWeight: "bold", color: "#00b2e1" }}
+        sx={{
+          mb: 2,
+          fontFamily: "Lexend",
+          fontWeight: "bold",
+          color: "#00b2e1",
+        }}
       >
         Map View
       </Typography>
-      <Grid container spacing={2}>
-        <Grid item size={9} >
-         <MapComponent
-              selectedDriver={selectedDriver}
+
+      {/* Main Map Container */}
+      <Paper
+        elevation={3}
+        sx={{
+          position: "relative",
+          width: "100%",
+          flexGrow: 1,
+          minHeight: 400,
+          borderRadius: 3,
+          overflow: "hidden",
+        }}
+      >
+        <MapComponent
+          selectedDriver={selectedDriver}
+          user={user}
+          mapRef={mapRef}
+        />
+
+        {/* Drawer Button */}
+        <Box sx={{ position: "absolute", top: 16, right: 16 }}>
+          <Tooltip title="Drivers">
+            <Fab
+              size="small"
+              onClick={() => setDrawerOpen((prev) => !prev)}
+              sx={{
+                bgcolor: "#00b2e1",
+                "&:hover": { bgcolor: "#0290bf" },
+                color: "#fff",
+              }}
+            >
+              <PeopleAltIcon />
+            </Fab>
+          </Tooltip>
+        </Box>
+      </Paper>
+
+      {/* Driver Drawer */}
+      <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+        <Box
+          sx={{ width: 360, p: 2, height: "100%", display: "flex", flexDirection: "column" }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+            <IconButton onClick={() => setDrawerOpen(false)} size="small">
+              <ChevronRightIcon />
+            </IconButton>
+            <Typography
+              variant="h5"
+              fontWeight="bold"
+              sx={{ color: "#00b2e1", ml: 1, fontFamily: "Lexend" }}
+            >
+              Drivers
+            </Typography>
+          </Box>
+
+          <Divider sx={{ mb: 1 }} />
+
+          <Box sx={{ flexGrow: 1, overflowY: "auto" }}>
+            <DriverListPanel
               user={user}
+              onDriverSelect={handleDriverSelect}
+              mapRef={mapRef}
             />
-        </Grid>
-        <Grid item size={3}>
-          <DriverListPanel
-            user={user}
-            selectedDriver={selectedDriver} 
-            onDriverSelect={handleDriverSelect}
-            onGiveWarning={handleGiveWarning}
-          />
-        </Grid>
-      </Grid>
-    </>
+          </Box>
+        </Box>
+      </Drawer>
+    </Box>
   );
 }

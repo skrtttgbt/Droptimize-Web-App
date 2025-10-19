@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
-import SidebarFooterAccount from "./SidebarFooterAccount.jsx";
-import { Link } from "react-router-dom";
-import { collection, doc, getDoc, query, setDoc, where } from "firebase/firestore";
-import { db } from "../../firebaseConfig.js";
+import { Link, useLocation } from "react-router-dom";
+import { Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Divider } from "@mui/material";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import InventoryIcon from "@mui/icons-material/Inventory";
+import MapIcon from "@mui/icons-material/Map";
 import QRCode from "react-qr-code";
+import SidebarFooterAccount from "./SidebarFooterAccount.jsx";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "/src/firebaseConfig";
 
+/**
+ * NavBar displays the main sidebar for navigation within the dashboard.
+ * It includes navigation links, a QR code for branch identification, and account controls.
+ */
 export default function NavBar() {
   const user = JSON.parse(localStorage.getItem("user"));
   const [branchId, setBranchId] = useState("");
   const [branch, setBranch] = useState(null);
+  const location = useLocation();
 
-useEffect(() => {
+  // Fetch branch information for QR generation
+  useEffect(() => {
     const fetchBranch = async () => {
       if (user?.uid) {
         try {
@@ -42,28 +53,148 @@ useEffect(() => {
     fetchBranch();
   }, [user]);
 
-  return (
+  // Navigation links with MUI icons
+  const navLinks = [
+    { label: "Dashboard", path: "/dashboard", icon: <DashboardIcon /> },
+    { label: "Drivers", path: "/dashboard/drivers", icon: <LocalShippingIcon /> },
+    { label: "Parcels", path: "/dashboard/parcels", icon: <InventoryIcon /> },
+    { label: "Map", path: "/dashboard/map", icon: <MapIcon /> },
+  ];
 
-    <div className="navbar-container">
-        <nav className="navbar">
-            <Link to="/"><img src="/logo.svg" alt="Droptimize Logo" className="navbar-logo"/></Link>
-            <ul>
-              <li><Link to="/dashboard"><img src="/icons/dashboard.svg" alt="Dashboard Icon" className="navbar-icon"/>Dashboard</Link></li>
-              <li><Link to="/dashboard/drivers"><img src="/icons/drivers.svg" alt="Drivers Icon" className="navbar-icon"/>Drivers</Link></li>
-              <li><Link to="/dashboard/parcels"><img src="/icons/parcels.svg" alt="Parcels Icon" className="navbar-icon"/> Parcels</Link></li>
-              <li><Link to="/dashboard/map"><img src="/icons/map.svg" alt="Map Icon" className="navbar-icon"/> Map</Link></li>
-              <li>
-              {branchId && (
-                <QRCode
-                  value={branchId}
-                  size={120} 
-                  style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                />
-              )}
-            </li>
-            </ul>
-        </nav>
-        <SidebarFooterAccount />
-    </div>
+  return (
+    <Drawer
+      variant="permanent"
+      sx={{
+        width: 250,
+        flexShrink: 0,
+        "& .MuiDrawer-paper": {
+          width: 250,
+          boxSizing: "border-box",
+          backgroundColor: "#ffffff",
+          color: "#000",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          pt: 2,
+          pb: 2,
+          fontFamily: "Lexend, sans-serif",
+        },
+      }}
+    >
+      {/* Logo Section */}
+      <Box sx={{ mb: 3, display: "flex", justifyContent: "center" }}>
+        <Box
+          component="img"
+          src="/logo.svg"
+          alt="Droptimize Logo"
+          sx={{
+            width: 150,
+            height: "auto",
+          }}
+        />
+      </Box>
+
+      <Divider sx={{ width: "80%", mb: 2, borderColor: "rgba(255,255,255,0.3)" }} />
+
+      {/* Navigation List */}
+      <List sx={{ width: "100%", flexGrow: 1 }}>
+        {navLinks.map((item) => (
+          <ListItemButton
+            key={item.label}
+            component={Link}
+            to={item.path}
+            selected={location.pathname === item.path}
+            sx={{
+              color: "#00b2e1",
+              "&.Mui-selected": {
+                backgroundColor: "#0064b5",
+              },
+              "&:hover": {
+                backgroundColor: "#f0f0f0",
+              },
+              pl: 3,
+              py: 1.5,
+              transition: "background-color 0.2s ease-in-out",
+            }}
+          >
+            <ListItemIcon sx={{ color: "#00b2e1", minWidth: 40 }}>
+              {item.icon}
+            </ListItemIcon>
+            <ListItemText
+              primary={item.label}
+              primaryTypographyProps={{
+                fontFamily: "Lexend, sans-serif",
+                fontWeight: 700,
+                fontSize: "1.25rem",
+              }}
+            />
+          </ListItemButton>
+        ))}
+      </List>
+
+      <Divider sx={{ width: "80%", mb: 2, borderColor: "rgba(255,255,255,0.3)" }} />
+
+      {/* QR Code Section */}
+      {branchId && (
+        <Box
+          sx={{
+            textAlign: "center",
+            mb: 2,
+            px: 2,
+            backgroundColor: "#00b2e1",
+            py: 2,
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{
+              fontFamily: "Lexend, sans-serif",
+              fontWeight: 700,
+              fontSize: "0.875rem",
+              mb: 1,
+              color: "#fff",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Scan To Join
+          </Typography>
+
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              backgroundColor: "#fff",
+              borderRadius: 2,
+              p: 1.5,
+              width: 140,
+              height: 140,
+              mx: "auto",
+            }}
+          >
+            <QRCode
+              value={branchId}
+              size={100}
+              style={{ height: "auto", width: "100%" }}
+            />
+          </Box>
+
+          <Typography
+            variant="caption"
+            sx={{
+              mt: 1,
+              color: "#fff",
+              display: "block",
+              fontFamily: "Lexend, sans-serif",
+            }}
+          >
+            {branch?.branchName || "Branch ID: " + branchId}
+          </Typography>
+        </Box>
+      )}
+
+      {/* Footer Account Section */}
+      <SidebarFooterAccount />
+    </Drawer>
   );
 }
