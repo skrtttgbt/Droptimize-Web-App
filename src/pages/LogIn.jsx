@@ -19,19 +19,7 @@ import {
 import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { sendPasswordResetEmail, fetchSignInMethodsForEmail } from "firebase/auth";
-import { checkAuth, auth } from "../firebaseConfig";
-
-// Sample loginUser function using Firebase
-import { signInWithEmailAndPassword } from "firebase/auth";
-
-async function loginUser(email, password) {
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error };
-  }
-}
+import { checkAuth, auth , loginUser } from "../firebaseConfig";
 
 export default function LogInForm() {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -94,7 +82,7 @@ export default function LogInForm() {
       if (success) {
         navigate("/dashboard");
       } else {
-        console.log("Login error code:", error.code); // Debug log
+        console.log("Login error code:", error.code); 
         const code = error.code || "";
         if (code.includes("auth/user-not-found")) {
           setFieldErrors({ email: "No account found with this email" });
@@ -252,8 +240,12 @@ const handleResetPassword = async () => {
             </Box>
 
             <Link
+              type="button" 
               component="button"
-              onClick={openForgotPassword}
+                onClick={(e) => {
+                  e.preventDefault(); 
+                  openForgotPassword();
+                }}
               underline="hover"
               sx={{
                 fontSize: 14,

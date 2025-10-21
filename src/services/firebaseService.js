@@ -33,6 +33,7 @@ export const fetchAllParcels = async (uid = null) => {
 
       parcels.push({
         id: parcelId, 
+        weight:parcelData.weight,
         reference: parcelId || "",
         status: parcelData.status || "Pending",
         recipient: parcelData.recipient || "",
@@ -117,6 +118,7 @@ export const addParcel = async (parcelData, uid) => {
 
     const dataToStore = {
       uid,
+      weight: parcelData.weight,
       packageId: parcelId,
       reference: parcelId|| "",
       status: parcelData.status || "Pending",
@@ -296,24 +298,33 @@ export const fetchDriverStatusData = async () => {
   }
 };
 
-export const fetchDeliveryVolumeData = async ( period = "daily", uid) => {
+
+
+export const fetchDeliveryVolumeData = async (period = "daily", uid) => {
   try {
     const parcelsRef = collection(db, "parcels");
     const q = query(
       parcelsRef,
-      where("status", "in", ["Delivered", "Cancelled"]), 
-      where("uid", "==", uid) 
+      where("status", "in", ["Delivered", "Cancelled"]),
+      where("uid", "==", uid)
     );
 
     const parcelsSnapshot = await getDocs(q);
     const deliveryData = {};
 
-    parcelsSnapshot.forEach((doc) => {
-      const parcel = doc.data();
-      const date = new Date(parcel.date?.toDate() || parcel.date);
-      if (!date || isNaN(date.getTime())) return;
+    parcelsSnapshot.forEach((docSnap) => {
+      const parcel = docSnap.data();
 
-      let dateKey =
+      // pick correct timestamp (prefer DeliveredAt or CancelledAt)
+      const ts =
+        parcel.DeliveredAt?.toDate?.() ??
+        parcel.CancelledAt?.toDate?.() ??
+        parcel.createdAt?.toDate?.();
+
+      if (!ts || isNaN(ts.getTime?.())) return;
+      const date = new Date(ts);
+
+      const dateKey =
         period === "daily"
           ? date.toISOString().split("T")[0]
           : `Week ${getWeekNumber(date)}`;
@@ -322,26 +333,31 @@ export const fetchDeliveryVolumeData = async ( period = "daily", uid) => {
         deliveryData[dateKey] = {
           date: dateKey,
           deliveries: 0,
-          failedOrReturned: 0,
+          cancelled: 0,
         };
       }
 
-      deliveryData[dateKey].deliveries++;
-      if (parcel.status === "cancelled") {
-        deliveryData[dateKey].failedOrReturned++;
+      if (parcel.status === "Delivered") {
+        deliveryData[dateKey].deliveries++;
+      } else if (parcel.status === "Cancelled") {
+        deliveryData[dateKey].cancelled++;
       }
     });
 
+    // compute success rate per period
     const result = Object.values(deliveryData).map((item) => {
-      const successRate =
-        ((item.deliveries - item.failedOrReturned) / item.deliveries) * 100;
-      return {
-        ...item,
-        successRate: isNaN(successRate) ? 0 : successRate.toFixed(2),
-      };
+      const total = item.deliveries + item.cancelled;
+      const successRate = total
+        ? ((item.deliveries / total) * 100).toFixed(2)
+        : 0;
+
+      return { ...item, total, successRate };
     });
 
-    return result.sort((a, b) => a.date.localeCompare(b.date));
+    // sort chronologically
+    return result.sort((a, b) =>
+      a.date.localeCompare(b.date, undefined, { numeric: true })
+    );
   } catch (error) {
     console.error("Error fetching delivery volume data:", error);
     return [];

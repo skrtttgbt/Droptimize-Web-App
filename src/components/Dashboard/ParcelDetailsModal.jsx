@@ -87,6 +87,9 @@ export default function ParcelDetailsModal({ open, onClose, parcel }) {
               <Typography variant="body2">
                 <strong>Date Added:</strong> {formatDate(parcel.dateAdded)}
               </Typography>
+              <Typography variant="body2">
+                <strong>Weight:</strong> {(parcel.weight || 0) + " kg"}
+              </Typography>
             </Stack>
           </Paper>
 

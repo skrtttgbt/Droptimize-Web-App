@@ -73,7 +73,7 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
   }, []);
 
   const emptyParcel = () => ({
-    parcelId: Date.now(),  // Generate a unique parcelId based on current time
+    parcelId: Date.now(), 
     recipient: "",
     recipientContact: "",
     weight: "",
@@ -87,6 +87,7 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
     municipalityName: "",
     barangay: "",
     barangayName: "",
+    weight: 0
   });
 
   const updateRow = (index, key, value, labelKey, labelValue) => {
@@ -279,6 +280,15 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
                     label="Recipient Contact"
                     value={row.recipientContact}
                     onChange={(e) => updateRow(idx, "recipientContact", e.target.value)}
+                    size="small"
+                    fullWidth
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    label="Parcel Weight (kg)"
+                    value={row.weight}
+                    onChange={(e) => updateRow(idx, "weight", e.target.value)}
                     size="small"
                     fullWidth
                   />
