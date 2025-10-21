@@ -13,6 +13,7 @@ import MapView from "./pages/MapView.jsx";
 import Profile from "./pages/Profile.jsx";
 import AccountSetup from "./pages/AccountSeutp.jsx";
 import DriverSimulator from "./components/DriverSimulator.jsx";
+import ResetPasswordForm from "./pages/ResetPassword.jsx";
 export default function App() {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/signup" element={<SignUpForm />} />
           <Route path="/login" element={<LogInForm />} />
           <Route path="/account-setup" element={<AccountSetup />} />
+          <Route path="/reset-password" element={<ResetPasswordForm/>} />
 
           {/* Dashboard layout with nested routes */}
           <Route path="/dashboard" element={<DashboardLayout />}>

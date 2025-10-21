@@ -1,21 +1,39 @@
 import { useState, useEffect } from "react";
-import { Box, Paper, Stack, Typography, TextField, InputAdornment, IconButton, Button, Checkbox, Link } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Stack,
+  Typography,
+  TextField,
+  InputAdornment,
+  IconButton,
+  Button,
+  Checkbox,
+  Link,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
+} from "@mui/material";
 import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
-import { auth } from "/src/firebaseConfig";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { checkAuth, loginUser } from "../firebaseConfig";
+import { sendPasswordResetEmail, fetchSignInMethodsForEmail } from "firebase/auth";
+import { checkAuth, auth } from "../firebaseConfig";
+
+// Sample loginUser function using Firebase
+import { signInWithEmailAndPassword } from "firebase/auth";
+
+async function loginUser(email, password) {
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error };
+  }
+}
 
 export default function LogInForm() {
-  useEffect(() => {
-    document.title = "Droptimize - Log In";
-    checkAuth().then(({ authenticated }) => {
-      if (authenticated) {
-        navigate("/dashboard");
-      }
-    });
-  }, []);
-
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
@@ -23,77 +41,123 @@ export default function LogInForm() {
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  // Forgot Password modal state
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = "Droptimize - Log In";
+    checkAuth().then(({ authenticated }) => {
+      if (authenticated) {
+        navigate("/dashboard");
+      }
+    });
+  }, [navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value.trimStart() }));
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const trimmedData = {
-    email: formData.email.trim(),
-    password: formData.password.trim(),
-  };
+    const trimmedEmail = formData.email.trim().toLowerCase();
+    const trimmedPassword = formData.password.trim();
 
-  const newErrors = {};
-  if (!trimmedData.email) newErrors.email = "Email is required";
-  if (!trimmedData.password) newErrors.password = "Password is required";
+    const newErrors = {};
+    if (!trimmedEmail) newErrors.email = "Email is required";
+    if (!trimmedPassword) newErrors.password = "Password is required";
 
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailPattern.test(trimmedData.email)) {
-    newErrors.email = "Invalid email format";
-  }
-
-  if (Object.keys(newErrors).length > 0) {
-    setFieldErrors(newErrors);
-    return;
-  }
-
-  setFieldErrors({});
-  setError("");
-  setLoading(true);
-
-  try {
-    const { success, error } = await loginUser(
-      trimmedData.email,
-      trimmedData.password
-    );
-
-    if (success) {
-      navigate("/dashboard");
-    } else {
-      const code = error.code || "";
-      if (code.includes("user-not-found")) {
-        setFieldErrors({ email: "No account found with this email" });
-      } else if (code.includes("wrong-password")) {
-        setFieldErrors({ password: "Incorrect password" });
-      } else {
-        setError("Login failed. Please try again.");
-      }
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (trimmedEmail && !emailPattern.test(trimmedEmail)) {
+      newErrors.email = "Invalid email format";
     }
-  } finally {
-    setLoading(false);
-  }
-};
 
-  const handleForgotPassword = async () => {
-    const email = formData.email.trim();
-    if (!email) {
-      setFieldErrors({ email: "Enter your email to reset password" });
+    if (Object.keys(newErrors).length > 0) {
+      setFieldErrors(newErrors);
       return;
     }
 
+    setFieldErrors({});
+    setError("");
+    setLoading(true);
+
     try {
-      await sendPasswordResetEmail(auth, email);
-      alert("Password reset email sent! Please check your inbox.");
-    } catch (err) {
-      console.error("Password reset error:", err.message);
-      setError("Failed to send password reset email.");
+      const { success, error } = await loginUser(trimmedEmail, trimmedPassword);
+
+      if (success) {
+        navigate("/dashboard");
+      } else {
+        console.log("Login error code:", error.code); // Debug log
+        const code = error.code || "";
+        if (code.includes("auth/user-not-found")) {
+          setFieldErrors({ email: "No account found with this email" });
+        } else if (code.includes("auth/wrong-password")) {
+          setFieldErrors({ password: "Incorrect password" });
+        } else {
+          setError("Login failed. Please try again.");
+        }
+      }
+    } finally {
+      setLoading(false);
     }
   };
+
+  const openForgotPassword = () => {
+    setResetEmail(formData.email.trim().toLowerCase());
+    setResetError("");
+    setResetSuccess(false);
+    setForgotPasswordOpen(true);
+  };
+
+  const closeForgotPassword = () => {
+    setForgotPasswordOpen(false);
+    setResetError("");
+    setResetSuccess(false);
+  };
+
+const handleResetPassword = async () => {
+  if (!resetEmail) {
+    setResetError("Please enter your email.");
+    return;
+  }
+
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(resetEmail.trim())) {
+    setResetError("Invalid email format.");
+    return;
+  }
+
+  setResetError("");
+  setResetLoading(true);
+
+  try {
+    const email = resetEmail.trim();
+
+    const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+    console.log("Forgot password - signInMethods:", signInMethods);
+
+    if (signInMethods.length === 0) {
+      setResetError("No account found with this email.");
+      setResetLoading(false);
+      return;
+    }
+
+    await sendPasswordResetEmail(auth, email);
+    setResetSuccess(true);
+  } catch (err) {
+    setResetError(err.message || "Failed to send reset email.");
+  } finally {
+    setResetLoading(false);
+  }
+};
+
 
   return (
     <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
@@ -104,7 +168,7 @@ const handleSubmit = async (e) => {
           p: 4,
           width: 320,
           borderRadius: "1rem",
-          boxShadow: 3
+          boxShadow: 3,
         }}
       >
         <Stack spacing={2} alignItems="center">
@@ -114,7 +178,7 @@ const handleSubmit = async (e) => {
             alt="Droptimize Logo"
             sx={{
               maxWidth: 300,
-              mb: 2
+              mb: 2,
             }}
           />
           <Typography
@@ -123,7 +187,7 @@ const handleSubmit = async (e) => {
             sx={{
               fontFamily: "LEMON MILK",
               fontWeight: "bold",
-              color: "#00b2e1"
+              color: "#00b2e1",
             }}
           >
             Log In
@@ -146,9 +210,7 @@ const handleSubmit = async (e) => {
             error={!!fieldErrors.email}
             helperText={fieldErrors.email || ""}
             size="small"
-            sx={{
-              mb: 2
-            }}
+            sx={{ mb: 2 }}
           />
 
           <TextField
@@ -162,16 +224,14 @@ const handleSubmit = async (e) => {
             error={!!fieldErrors.password}
             helperText={fieldErrors.password || ""}
             size="small"
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPassword((prev) => !prev)} edge="end">
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton onClick={() => setShowPassword((prev) => !prev)} edge="end">
+                    {showPassword ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              ),
             }}
           />
 
@@ -184,7 +244,7 @@ const handleSubmit = async (e) => {
                 sx={{
                   p: 0,
                   mr: 1,
-                  font: "inherit"
+                  font: "inherit",
                 }}
                 id="rememberMe"
               />
@@ -193,7 +253,7 @@ const handleSubmit = async (e) => {
 
             <Link
               component="button"
-              onClick={handleForgotPassword}
+              onClick={openForgotPassword}
               underline="hover"
               sx={{
                 fontSize: 14,
@@ -220,26 +280,64 @@ const handleSubmit = async (e) => {
               fontFamily: "LEMON MILK",
               fontSize: loading ? "16px" : "18px",
               padding: "1rem 2rem",
-              margin: "1rem 0"
+              margin: "1rem 0",
             }}
           >
             {loading ? "Logging in..." : "Log In"}
           </Button>
 
           <Typography variant="body2" align="center">
-            Don"t have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link
               href="/signup"
               underline="hover"
               sx={{
                 color: "#00b2e1",
-                fontWeight: 600
+                fontWeight: 600,
               }}
             >
               Sign up
             </Link>
           </Typography>
         </Stack>
+
+        {/* Forgot Password Modal */}
+        <Dialog open={forgotPasswordOpen} onClose={closeForgotPassword}>
+          <DialogTitle>Reset Password</DialogTitle>
+          <DialogContent>
+            {resetSuccess ? (
+              <Typography sx={{ mt: 1 }}>
+                Password reset email sent! Please check your inbox.
+              </Typography>
+            ) : (
+              <>
+                <TextField
+                  autoFocus
+                  margin="dense"
+                  label="Email Address"
+                  type="email"
+                  fullWidth
+                  variant="outlined"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value.trimStart().toLowerCase())}
+                  error={!!resetError}
+                  helperText={resetError}
+                  disabled={resetLoading}
+                />
+              </>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeForgotPassword} disabled={resetLoading}>
+              OK
+            </Button>
+            {!resetSuccess && (
+              <Button onClick={handleResetPassword} disabled={resetLoading} variant="contained">
+                {resetLoading ? <CircularProgress size={20} /> : "Send Reset Email"}
+              </Button>
+            )}
+          </DialogActions>
+        </Dialog>
       </Paper>
     </Box>
   );

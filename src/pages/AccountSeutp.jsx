@@ -80,7 +80,7 @@ export default function AccountSetup() {
 
   const handleSubmit = async () => {
     if (!isValid || !userId) return;
-
+    console.log("valid")
     try {
       const branchRef = await addDoc(collection(db, "branches"), {
         adminId: userId,
@@ -91,7 +91,7 @@ export default function AccountSetup() {
         closingTime: formData.closingTime?.format("HH:mm") || "",
         createdAt: serverTimestamp(),
       });
-
+      console.log("Branch")
       await setDoc(doc(db, "users", userId), {
         fullName: formData.fullName,
         email: formData.email,
@@ -99,8 +99,9 @@ export default function AccountSetup() {
         role: "admin",
         branchId: branchRef.id,
         createdAt: serverTimestamp(),
-      });
+      }, { merge: true });
 
+      console.log("user")
       setSubmitted(true);
       setTimeout(() => navigate("/dashboard"), 3000);
     } catch (error) {

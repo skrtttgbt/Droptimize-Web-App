@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
+
 export const fetchAllParcels = async (uid = null) => {
   try {
     const parcels = [];
