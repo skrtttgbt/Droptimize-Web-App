@@ -13,7 +13,6 @@ export default function SidebarFooterAccount() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          // Fetch Firestore user document
           const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
 
           if (userDoc.exists()) {

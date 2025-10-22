@@ -11,20 +11,18 @@ import {
 } from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
-import MyLocationIcon from "@mui/icons-material/MyLocation";
 
-import { auth } from "/src/firebaseConfig";
+import { auth, db } from "/src/firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 import MapComponent from "/src/components/MapComponent.jsx";
 import DriverListPanel from "/src/components/DriverListPanel.jsx";
 
 export default function MapView() {
   const [user, setUser] = useState(null);
-  const passedDriver = location.state?.driver || null;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState(null);
-
   const mapRef = useRef(null);
 
   useEffect(() => {
@@ -32,20 +30,41 @@ export default function MapView() {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
-  
-   useEffect(() => {
-    if (passedDriver) {
-      setSelectedDriver(passedDriver);
-      if (mapRef.current && passedDriver.location) {
-        const { latitude, longitude } = passedDriver.location;
-        mapRef.current.panTo({ lat: latitude, lng: longitude });
-        mapRef.current.setZoom(17);
+
+  useEffect(() => {
+    const fetchDriverById = async (driverId) => {
+      try {
+        const docRef = doc(db, "users", driverId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const driverData = { id: docSnap.id, ...docSnap.data() };
+          setSelectedDriver(driverData);
+
+          if (mapRef.current && driverData.location) {
+            const { latitude, longitude } = driverData.location;
+            mapRef.current.panTo({ lat: latitude, lng: longitude });
+            mapRef.current.setZoom(17);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching driver:", err);
       }
-    }
-  }, [passedDriver]);
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const driverId = params.get("driverId");
+    if (driverId) fetchDriverById(driverId);
+  }, []);
+
   const handleDriverSelect = useCallback((driver) => {
     setSelectedDriver(driver);
     setDrawerOpen(false);
+
+    if (mapRef.current && driver.location) {
+      const { latitude, longitude } = driver.location;
+      mapRef.current.panTo({ lat: latitude, lng: longitude });
+      mapRef.current.setZoom(17);
+    }
   }, []);
 
   return (
@@ -71,7 +90,7 @@ export default function MapView() {
         Map View
       </Typography>
 
-      {/* Main Map Container */}
+      {/* Map Container */}
       <Paper
         elevation={3}
         sx={{
@@ -83,6 +102,7 @@ export default function MapView() {
           overflow: "hidden",
         }}
       >
+        {/* ✅ Pass the full driver data */}
         <MapComponent
           selectedDriver={selectedDriver}
           user={user}
@@ -110,7 +130,13 @@ export default function MapView() {
       {/* Driver Drawer */}
       <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box
-          sx={{ width: 360, p: 2, height: "100%", display: "flex", flexDirection: "column" }}
+          sx={{
+            width: 360,
+            p: 2,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+          }}
         >
           <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
             <IconButton onClick={() => setDrawerOpen(false)} size="small">

@@ -12,7 +12,7 @@ export default function OverspeedingTrendChart({ dailyData = [], weeklyData = []
   return (
     <Paper elevation={3} sx={{ p: 2, height: 350, minWidth: 700 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-        <Typography variant="h6">Average Driver Speed</Typography>
+        <Typography variant="h6">Overspeeding Drivers</Typography>
         <ToggleButtonGroup value={view} exclusive onChange={handleChange} size="small">
           <ToggleButton value="daily">Daily</ToggleButton>
           <ToggleButton value="weekly">Weekly</ToggleButton>

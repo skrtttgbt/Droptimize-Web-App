@@ -69,7 +69,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     libraries: ["places", "geometry"],
   });
 
-  // ================= EFFECTS =================
+
   useEffect(() => {
     if (!user) return;
     const fetchBranch = async () => {

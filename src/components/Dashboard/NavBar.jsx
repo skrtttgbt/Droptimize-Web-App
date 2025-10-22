@@ -10,17 +10,11 @@ import SidebarFooterAccount from "./SidebarFooterAccount.jsx";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "/src/firebaseConfig";
 
-/**
- * NavBar displays the main sidebar for navigation within the dashboard.
- * It includes navigation links, a QR code for branch identification, and account controls.
- */
 export default function NavBar() {
   const user = JSON.parse(localStorage.getItem("user"));
   const [branchId, setBranchId] = useState("");
   const [branch, setBranch] = useState(null);
   const location = useLocation();
-
-  // Fetch branch information for QR generation
   useEffect(() => {
     const fetchBranch = async () => {
       if (user?.uid) {
@@ -53,7 +47,6 @@ export default function NavBar() {
     fetchBranch();
   }, [user]);
 
-  // Navigation links with MUI icons
   const navLinks = [
     { label: "Dashboard", path: "/dashboard", icon: <DashboardIcon /> },
     { label: "Drivers", path: "/dashboard/drivers", icon: <LocalShippingIcon /> },

@@ -15,6 +15,8 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import MapIcon from "@mui/icons-material/Map";
 import { arrayUnion, doc, Timestamp, updateDoc } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
+import { useNavigate } from "react-router-dom";
+
 
 const statusColors = {
   available: "#29bf12",
@@ -28,6 +30,7 @@ export default function DriverDetailsModal({
   onClose,
   onAssignParcel,
 }) {
+  const navigate = useNavigate();
   if (!driver) return null;
 
   const handleGiveWarning = async () => {
@@ -56,13 +59,10 @@ export default function DriverDetailsModal({
     }
   };
   
-  const handleViewMap = (driver) => {
-  if (!driver.location) return;
-    const { latitude, longitude } = driver.location;
-    mapRef.current.panTo({ lat: latitude, lng: longitude });
-    mapRef.current.setZoom(17);
-    onDriverSelect(driver);
-  };
+    const handleViewMap = () => {
+      navigate(`/dashboard/map?driverId=${driver.id}`);
+    };
+
   const status = (driver.status || "offline").toLowerCase();
 
   const photo =

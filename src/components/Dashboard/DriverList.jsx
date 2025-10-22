@@ -26,7 +26,6 @@ export default function DriverList({
     offline: "#c4cad0",
   };
 
-  // Group drivers by status
   const groupedDrivers = { Available: [], Delivering: [], Offline: [] };
   drivers.forEach((driver) => {
     const status = (driver?.status || "offline").toLowerCase();
@@ -64,7 +63,7 @@ export default function DriverList({
           elevation={3}
           onClick={() => handleCardClick(driver)}
           sx={{
-            width: 340, // 🔹 fixed absolute width
+            width: 340,
             height: 160,
             display: "flex",
             alignItems: "center",

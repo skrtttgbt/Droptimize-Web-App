@@ -420,9 +420,6 @@ export const fetchOverspeedingData = async (period = "daily") => {
   }
 };
 
-
-
-
 // ======================== RECENT INCIDENTS ========================
 export const fetchRecentIncidents = async (limitCount = 5) => {
   try {
