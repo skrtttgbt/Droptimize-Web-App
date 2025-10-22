@@ -13,13 +13,16 @@ import {
   onSnapshot,
   doc,
   getDoc,
+  updateDoc,
+  arrayUnion,
+  Timestamp,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../firebaseConfig";
 import DriversHeader from "../components/Dashboard/DriversHeader.jsx";
 import DriverList from "../components/Dashboard/DriverList.jsx";
 import AssignDriverModal from "./Modals/AssignDriver.jsx";
-import DriverDetailsModal from "../components/Dashboard/DriverDetailsModal.jsx"; // ✅ Import modal
+import DriverDetailsModal from "../components/Dashboard/DriverDetailsModal.jsx"; 
 
 export default function Drivers() {
   const [user, setUser] = useState(null);
@@ -30,16 +33,14 @@ export default function Drivers() {
   const [selectedStatus, setSelectedStatus] = useState("");
 
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false); // ✅ Added for details
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false); 
   const [selectedDriver, setSelectedDriver] = useState(null);
 
-  // 🔹 Listen for auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
-  // 🔹 Fetch branchId of current user
   useEffect(() => {
     if (!user) return;
     const fetchBranchId = async () => {
@@ -56,7 +57,6 @@ export default function Drivers() {
     fetchBranchId();
   }, [user]);
 
-  // 🔹 Listen for drivers in the same branch
   useEffect(() => {
     if (!branchId) return;
 
@@ -90,7 +90,6 @@ export default function Drivers() {
     d?.displayName ||
     "Unnamed Driver";
 
-  // 🔹 Filter drivers
   const filteredDrivers = useMemo(() => {
     let result = [...allDrivers];
     const q = searchQuery.trim().toLowerCase();
@@ -112,26 +111,14 @@ export default function Drivers() {
     return result;
   }, [allDrivers, searchQuery, selectedStatus]);
 
-  // 🔹 Assign Parcel
   const handleAssignParcelClick = (driver) => {
     setSelectedDriver(driver);
     setAssignModalOpen(true);
   };
 
-  // 🔹 Open Driver Details
   const handleViewDetails = (driver) => {
     setSelectedDriver(driver);
     setDetailsModalOpen(true);
-  };
-
-  // 🔹 Give Warning (can be updated later to write to Firestore)
-  const handleGiveWarning = (driver) => {
-    alert(`⚠️ Warning sent to ${getDisplayName(driver)}.`);
-  };
-
-  // 🔹 View Map (you can integrate with your map page)
-  const handleViewMap = (driver) => {
-    alert(`🗺️ Showing ${getDisplayName(driver)} on the map.`);
   };
 
   return (
@@ -198,7 +185,7 @@ export default function Drivers() {
             <DriverList
               drivers={filteredDrivers}
               onAssignParcel={handleAssignParcelClick}
-              onViewDetails={handleViewDetails} // ✅ passes driver to open modal
+              onViewDetails={handleViewDetails} 
             />
           </Box>
         )}
@@ -211,7 +198,7 @@ export default function Drivers() {
         driver={selectedDriver}
       />
 
-      {/* ✅ Driver Details Modal */}
+      {/* Driver Details Modal */}
       <DriverDetailsModal
         open={detailsModalOpen}
         driver={selectedDriver}
@@ -220,8 +207,6 @@ export default function Drivers() {
           setDetailsModalOpen(false);
           handleAssignParcelClick(driver);
         }}
-        onGiveWarning={handleGiveWarning}
-        onViewMap={handleViewMap}
       />
     </Box>
   );

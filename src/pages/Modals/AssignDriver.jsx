@@ -22,9 +22,10 @@ import {
   Typography,
   Divider,
   Stack,
+  TextField,
 } from "@mui/material";
+import { CheckBox } from "@mui/icons-material";
 
-// Haversine distance (km)
 function haversineDistanceKM(lat1, lon1, lat2, lon2) {
   const toRad = (x) => (x * Math.PI) / 180;
   const R = 6371;
@@ -45,10 +46,9 @@ export default function AssignDriverModal({ open, onClose, driver }) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(0);
   const [userLocation, setUserLocation] = useState(null);
-
-  const assumedSpeedKmh = 45;
+  const [SpeedKmh, setSpeedKmh] = useState(45);
   const allowanceMinutesPerParcel = 3;
-
+  
   useEffect(() => {
     if (!navigator.geolocation) {
       setUserLocation(null);
@@ -86,7 +86,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       const unassigned = allParcels
         .filter(
           (p) =>
-            p.status !== "Delivered" && // Filter out "Delivered" status
+            p.status !== "Delivered" && 
             !p.driverUid &&
             !p.driverName &&
             preferred.some(
@@ -100,7 +100,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
 
       const assignedToDriver = allParcels.filter(
         (p) =>
-          p.status !== "Delivered" && // Filter out "Delivered" status
+          p.status !== "Delivered" && 
           p.driverUid === driver.id
       );
 
@@ -168,7 +168,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
     }
 
     const fastMinutes =
-      Math.round((fastDistance / assumedSpeedKmh) * 60) +
+      Math.round((fastDistance / SpeedKmh) * 60) +
       allowanceMinutesPerParcel * destinations.length;
 
     const formatTime = (mins) => {
@@ -192,7 +192,17 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       console.error("Error assigning parcel:", error);
     }
   };
-
+  const handleSaveAverage = async (e) => {
+    e.preventDefault()
+    try {
+      await updateDoc(doc(db, "users", driver.id),{
+        speedAvg: SpeedKmh
+      });
+      alert("Speed Average has been save Successfully!")
+    }catch(e){
+      console.error("Error assigning drivers speedlimit", e)
+    }
+  }
   const handleUnassign = async (parcel) => {
     try {
       await updateDoc(doc(db, "parcels", parcel.id), {
@@ -222,6 +232,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
             : "No parcels have been assigned to this driver yet."}
         </Typography>
       );
+
 
     return (
       <List dense disablePadding>
@@ -283,6 +294,14 @@ export default function AssignDriverModal({ open, onClose, driver }) {
             <Typography variant="body2" color="text.secondary">
               Total ETA: {computeTotalETA(parcels.assignedToDriver)}
             </Typography>
+            {/* Speed Average */}
+            <Typography variant="body2" color="text.secondary">
+              Speed Average
+            </Typography>
+            <TextField type="number" defaultValue={driver?.speedAvg || 45} placeholder="Enter the SpeedKmh Average default (45kmh)" onChange={(e) => setSpeedKmh(e.target.value)}/>
+            <Button onClick={handleSaveAverage} variant="outlined" color="primary">
+              Save Average
+            </Button>
           </Box>
         </Stack>
       </DialogTitle>

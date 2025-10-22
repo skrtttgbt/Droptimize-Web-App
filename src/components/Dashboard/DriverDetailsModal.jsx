@@ -13,6 +13,8 @@ import {
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import MapIcon from "@mui/icons-material/Map";
+import { arrayUnion, doc, Timestamp, updateDoc } from "firebase/firestore";
+import { db } from "../../firebaseConfig";
 
 const statusColors = {
   available: "#29bf12",
@@ -25,14 +27,44 @@ export default function DriverDetailsModal({
   open,
   onClose,
   onAssignParcel,
-  onGiveWarning,
-  onViewMap,
 }) {
   if (!driver) return null;
 
+  const handleGiveWarning = async () => {
+    try {
+      const distance = driver.totalDistance || 0;
+      const avgSpeed = driver.avgSpeed || driver.speed || 0;
+      const topSpeed = driver.topSpeed || driver.speed || 0;
+      const time = driver.activeMinutes || 0;
+
+      await updateDoc(doc(db, "users", driver.id), {
+        violations: arrayUnion({
+          driverLocation: driver.location || null,
+          issuedAt: Timestamp.now(),
+          message: "Speeding violation",
+          distance,
+          avgSpeed,
+          topSpeed,
+          time,
+        }),
+      });
+
+      alert(`Warning given to ${driver.fullName || "driver"}`);
+    } catch (err) {
+      console.error("Failed to give warning:", err);
+      alert("Error giving warning. Try again.");
+    }
+  };
+  
+  const handleViewMap = (driver) => {
+  if (!driver.location) return;
+    const { latitude, longitude } = driver.location;
+    mapRef.current.panTo({ lat: latitude, lng: longitude });
+    mapRef.current.setZoom(17);
+    onDriverSelect(driver);
+  };
   const status = (driver.status || "offline").toLowerCase();
 
-  // Detect proper photo field
   const photo =
     driver.avatar ||
     driver.photoURL ||
@@ -97,12 +129,12 @@ export default function DriverDetailsModal({
                 label={status}
                 size="small"
                 sx={{
-                    textTransform: "capitalize",
-                    backgroundColor: statusColors[status] || "#c4cad0",
-                    color: "#fff",
-                    fontWeight: 500,
+                  textTransform: "capitalize",
+                  backgroundColor: statusColors[status] || "#c4cad0",
+                  color: "#fff",
+                  fontWeight: 500,
                 }}
-                />
+              />
             </Grid>
 
             {/* Info */}
@@ -173,7 +205,7 @@ export default function DriverDetailsModal({
               <Button
                 variant="contained"
                 startIcon={<WarningAmberIcon />}
-                onClick={() => onGiveWarning?.(driver)}
+                onClick={handleGiveWarning}
                 sx={{
                   textTransform: "none",
                   borderRadius: 2,
@@ -188,7 +220,7 @@ export default function DriverDetailsModal({
               <Button
                 variant="contained"
                 startIcon={<MapIcon />}
-                onClick={() => onViewMap?.(driver)}
+                onClick={handleViewMap}
                 sx={{
                   textTransform: "none",
                   borderRadius: 2,

@@ -23,7 +23,6 @@ async function geocodeAddress({ street, barangay, municipalityName, provinceName
     .filter(Boolean)
     .join(", ");
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(parts)}`;
-
   try {
     const res = await fetch(url, { headers: { "User-Agent": "ParcelApp/1.0" } });
     const data = await res.json();

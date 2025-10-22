@@ -250,18 +250,12 @@ export const getParcel = async (parcelId) => {
 // ======================== DRIVER STATUS DATA ========================
 export const fetchDriverStatusData = async () => {
   try {
-    // Parse the branch data from localStorage
     const branch = JSON.parse(localStorage.getItem("branch"));
-    
-    // Check if branch and branchId are valid
     if (!branch || !branch.branchId) {
       console.error("Branch data is missing or invalid in localStorage.");
       return { available: 0, onTrip: 0, offline: 0 };
     }
-
     console.log("Fetched branch from localStorage:", branch);
-
-    // Firestore query to get drivers with role "driver" and matching branchId
     const driversRef = collection(db, "users");
     const driverDoc = query(
       driversRef,
@@ -298,15 +292,13 @@ export const fetchDriverStatusData = async () => {
   }
 };
 
-
-
 export const fetchDeliveryVolumeData = async (period = "daily", uid) => {
   try {
     const parcelsRef = collection(db, "parcels");
     const q = query(
       parcelsRef,
       where("status", "in", ["Delivered", "Cancelled"]),
-      where("uid", "==", uid)
+      where("uid", "==", uid),
     );
 
     const parcelsSnapshot = await getDocs(q);
@@ -315,7 +307,6 @@ export const fetchDeliveryVolumeData = async (period = "daily", uid) => {
     parcelsSnapshot.forEach((docSnap) => {
       const parcel = docSnap.data();
 
-      // pick correct timestamp (prefer DeliveredAt or CancelledAt)
       const ts =
         parcel.DeliveredAt?.toDate?.() ??
         parcel.CancelledAt?.toDate?.() ??
@@ -344,7 +335,6 @@ export const fetchDeliveryVolumeData = async (period = "daily", uid) => {
       }
     });
 
-    // compute success rate per period
     const result = Object.values(deliveryData).map((item) => {
       const total = item.deliveries + item.cancelled;
       const successRate = total
@@ -354,7 +344,6 @@ export const fetchDeliveryVolumeData = async (period = "daily", uid) => {
       return { ...item, total, successRate };
     });
 
-    // sort chronologically
     return result.sort((a, b) =>
       a.date.localeCompare(b.date, undefined, { numeric: true })
     );
@@ -367,54 +356,72 @@ export const fetchDeliveryVolumeData = async (period = "daily", uid) => {
 // ======================== OVERSPEEDING DATA ========================
 export const fetchOverspeedingData = async (period = "daily") => {
   try {
-    const incidentsRef = collection(db, "users");
-    const incidentsSnapshot = await getDocs(incidentsRef);
+    const branch = JSON.parse(localStorage.getItem("branch"));
+    if (!branch || !branch.branchId) {
+      console.error("Branch data is missing or invalid in localStorage.");
+      return [];
+    }
 
-    const incidentData = {};
+    const incidentsRef = collection(db, "users");
+    const q = query(
+      incidentsRef,
+      where("branchId", "==", branch.branchId)
+    );
+
+    const incidentsSnapshot = await getDocs(q);
+    const violationData = {};
 
     incidentsSnapshot.forEach((doc) => {
-      const incident = doc.data();
-      const date = new Date(incident.timestamp?.toDate() || incident.timestamp);
-      if (!date || isNaN(date.getTime())) return;
+      const user = doc.data();
+      const violations = user.violations;
 
-      let dateKey =
-        period === "daily"
-          ? date.toISOString().split("T")[0]
-          : `Week ${getWeekNumber(date)}`;
+      if (!Array.isArray(violations)) return;
 
-      if (!incidentData[dateKey]) {
-        incidentData[dateKey] = {
-          date: dateKey,
-          incidents: 0,
-          totalSpeed: 0,
-          speedReadings: 0,
-        };
-      }
+      violations.forEach((violation) => {
+        const date = new Date(
+          violation.issuedAt?.toDate?.() || violation.issuedAt
+        );
+        if (!date || isNaN(date.getTime())) return;
 
-      incidentData[dateKey].incidents++;
+        const dateKey =
+          period === "daily"
+            ? date.toISOString().split("T")[0]
+            : `Week ${getWeekNumber(date)}`;
 
-      if (incident.speed) {
-        incidentData[dateKey].totalSpeed += incident.speed;
-        incidentData[dateKey].speedReadings++;
-      }
+        if (!violationData[dateKey]) {
+          violationData[dateKey] = {
+            date: dateKey,
+            count: 0,
+            topSpeed: 0,
+          };
+        }
+
+        violationData[dateKey].count++;
+
+        if (typeof violation.topSpeed === "number") {
+          violationData[dateKey].topSpeed = Math.max(
+            violationData[dateKey].topSpeed,
+            violation.topSpeed
+          );
+        }
+      });
     });
 
-    const result = Object.values(incidentData).map((item) => {
-      const avgSpeed =
-        item.speedReadings > 0 ? item.totalSpeed / item.speedReadings : 0;
-      return {
-        date: item.date,
-        incidents: item.incidents,
-        avgSpeed: Math.round(avgSpeed),
-      };
-    });
+    const result = Object.values(violationData).map((item) => ({
+      date: item.date,
+      violations: item.count,
+      topSpeed: item.topSpeed,
+    }));
 
     return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch (error) {
-    console.error("Error fetching overspeeding data:", error);
+    console.error("Error fetching violations data:", error);
     return [];
   }
 };
+
+
+
 
 // ======================== RECENT INCIDENTS ========================
 export const fetchRecentIncidents = async (limitCount = 5) => {
@@ -425,20 +432,14 @@ export const fetchRecentIncidents = async (limitCount = 5) => {
       console.error("Branch data is missing or invalid in localStorage.");
       return [];
     }
-
-    // Get all drivers in this branch
     const usersRef = collection(db, "users");
     const usersQuery = query(
       usersRef,
       where("role", "==", "driver"),
       where("branchId", "==", branch.branchId)
     );
-
     const usersSnapshot = await getDocs(usersQuery);
-
     const violations = [];
-
-    // Loop through each driver document
     usersSnapshot.forEach((userDoc) => {
       const userData = userDoc.data();
       const driverViolations = userData.violations || [];
@@ -461,8 +462,6 @@ export const fetchRecentIncidents = async (limitCount = 5) => {
         });
       });
     });
-
-    // Sort by date (most recent first)
     return violations.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );

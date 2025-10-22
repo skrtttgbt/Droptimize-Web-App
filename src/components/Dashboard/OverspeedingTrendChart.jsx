@@ -29,14 +29,14 @@ export default function OverspeedingTrendChart({ dailyData = [], weeklyData = []
             xAxis={[{ scaleType: "point", data: selectedData.map(p => p.date), label: view === "daily" ? "Date" : "Week" }]}
             series={[
               {
-                data: selectedData.map(p => p.avgSpeed),
-                label: "Average Speed (km/h)",
+                data: selectedData.map(p => p.topSpeed),
+                label: "Top Speed (km/h)",
                 color: "#0064b5",
                 yAxisKey: "right",
               },
               {
-                data: selectedData.map(p => p.incidents),
-                label: "Overspeeding Incidents",
+                data: selectedData.map(p => p.violations),
+                label: "Overspeeding Violations",
                 color: "#f21b3f",
                 yAxisKey: "left",
               },

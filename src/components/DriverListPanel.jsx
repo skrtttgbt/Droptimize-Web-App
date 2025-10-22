@@ -28,7 +28,6 @@ import {
 import { ExpandMore, MyLocation } from "@mui/icons-material";
 import GiveWarningButton from "./GiveWarningButton.jsx";
 
-// Utility functions
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const toRad = (deg) => (deg * Math.PI) / 180;
@@ -72,7 +71,6 @@ function getDynamicSpeedLimit(driver, slowdowns) {
   return Math.min(...activeZones.map((z) => z.speedLimit));
 }
 
-// Main Component
 export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   const [drivers, setDrivers] = useState([]);
   const [branchId, setBranchId] = useState(null);
@@ -80,7 +78,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   const [slowdowns, setSlowdowns] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
 
-  // Get user geolocation
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
@@ -93,7 +90,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     );
   }, []);
 
-  // Fetch branchId
   useEffect(() => {
     if (!user) return;
     const fetchBranchId = async () => {
@@ -107,7 +103,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     fetchBranchId();
   }, [user]);
 
-  // Fetch drivers
   useEffect(() => {
     if (!branchId) return;
     const q = query(
@@ -126,7 +121,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     return () => unsub();
   }, [branchId]);
 
-  // Fetch slowdowns
+
   useEffect(() => {
     if (!branchId) return;
     const unsub = onSnapshot(doc(db, "branches", branchId), (snap) => {
@@ -136,7 +131,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     return () => unsub();
   }, [branchId]);
 
-  // Fetch parcels
   useEffect(() => {
     if (!branchId) return;
     const q = query(
@@ -155,11 +149,10 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     return () => unsub();
   }, [branchId]);
 
-  // Calculate ETA
   const getEtaForDriver = (driver, userLocation) => {
     const driverParcels = parcels[driver.id] || [];
     if (!userLocation || driverParcels.length === 0) return "N/A";
-    const speed = driver.speed && driver.speed > 0 ? driver.speed : 45;
+    const speed = driver.speed && driver.speed > 0 ? driver.speed : driver?.avgSpeed || 45;
 
     const destinations = driverParcels
       .filter((p) => p.destination?.latitude && p.destination?.longitude)
@@ -212,7 +205,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     if (!user) return alert("User not authenticated.");
 
     try {
-      // Replace these with actual driver fields or computed values
+
       const distance = driver.totalDistance || 0;
       const avgSpeed = driver.avgSpeed || driver.speed || 0;
       const topSpeed = driver.topSpeed || driver.speed || 0;
@@ -243,7 +236,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     const { latitude, longitude } = driver.location;
     mapRef.current.panTo({ lat: latitude, lng: longitude });
     mapRef.current.setZoom(17);
-    onDriverSelect(driver); // update selected driver in MapView
+    onDriverSelect(driver);
   };
 
   return (
@@ -301,7 +294,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
                 <Grid container alignItems="center" justifyContent="space-between">
                   <Grid>
                     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                      <Typography variant="body2">Vehicle: {driver.vehicle || "N/A"}</Typography>
+                      <Typography variant="body2">Vehicle: {driver.vehicleType + " | " + driver.model || "N/A"}</Typography>
                       <Typography variant="body2">Plate: {driver.plateNumber || "N/A"}</Typography>
                     </Box>
                   </Grid>

@@ -41,10 +41,9 @@ export default function ResetPasswordForm() {
       return;
     }
 
-    // Verify the oobCode with Firebase
     verifyPasswordResetCode(auth, oobCode)
       .then((email) => {
-        setEmail(email); // Save email for context if needed
+        setEmail(email);
       })
       .catch(() => {
         setError("The password reset link is invalid or has expired.");

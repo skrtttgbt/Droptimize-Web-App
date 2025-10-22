@@ -21,6 +21,7 @@ import DriverListPanel from "/src/components/DriverListPanel.jsx";
 
 export default function MapView() {
   const [user, setUser] = useState(null);
+  const passedDriver = location.state?.driver || null;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState(null);
 
@@ -31,7 +32,17 @@ export default function MapView() {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
-
+  
+   useEffect(() => {
+    if (passedDriver) {
+      setSelectedDriver(passedDriver);
+      if (mapRef.current && passedDriver.location) {
+        const { latitude, longitude } = passedDriver.location;
+        mapRef.current.panTo({ lat: latitude, lng: longitude });
+        mapRef.current.setZoom(17);
+      }
+    }
+  }, [passedDriver]);
   const handleDriverSelect = useCallback((driver) => {
     setSelectedDriver(driver);
     setDrawerOpen(false);
