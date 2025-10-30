@@ -13,16 +13,13 @@ import {
   onSnapshot,
   doc,
   getDoc,
-  updateDoc,
-  arrayUnion,
-  Timestamp,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../firebaseConfig";
 import DriversHeader from "../components/Dashboard/DriversHeader.jsx";
 import DriverList from "../components/Dashboard/DriverList.jsx";
 import AssignDriverModal from "./Modals/AssignDriver.jsx";
-import DriverDetailsModal from "../components/Dashboard/DriverDetailsModal.jsx"; 
+import DriverDetailsModal from "../components/Dashboard/DriverDetailsModal.jsx";
 
 export default function Drivers() {
   const [user, setUser] = useState(null);
@@ -33,7 +30,7 @@ export default function Drivers() {
   const [selectedStatus, setSelectedStatus] = useState("");
 
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false); 
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState(null);
 
   useEffect(() => {
@@ -185,7 +182,7 @@ export default function Drivers() {
             <DriverList
               drivers={filteredDrivers}
               onAssignParcel={handleAssignParcelClick}
-              onViewDetails={handleViewDetails} 
+              onViewDetails={handleViewDetails}
             />
           </Box>
         )}
