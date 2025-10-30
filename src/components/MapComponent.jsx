@@ -237,22 +237,36 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
   }, [isLoaded, center]);
 
   useEffect(() => {
-    if (!selectedDriver?.id) {
+    if (!selectedDriver) {
       setDriverParcels([]);
       return;
     }
+    const uidCandidates = [selectedDriver.id, selectedDriver.uid]
+      .map((v) => (typeof v === "string" ? v.trim() : v))
+      .filter(Boolean);
     const parcelsRef = collection(db, "parcels");
-    const qy = query(parcelsRef, where("driverUid", "==", selectedDriver.id));
+    const qy =
+      uidCandidates.length === 1
+        ? query(
+            parcelsRef,
+            where("driverUid", "==", uidCandidates[0]),
+            where("status", "not-in", ["Delivered", "Cancelled"])
+          )
+        : query(
+            parcelsRef,
+            where("driverUid", "in", uidCandidates),
+            where("status", "not-in", ["Delivered", "Cancelled"])
+          );
     const unsub = onCollectionSnapshot(
       qy,
       (snapshot) => {
-        const docs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         setDriverParcels(docs);
       },
       (err) => console.error("onSnapshot(parcels) error:", err)
     );
     return () => unsub();
-  }, [selectedDriver]);
+  }, [selectedDriver?.id, selectedDriver?.uid]);
 
   useEffect(() => {
     if (!isLoaded || !driverPos || driverParcels.length === 0) {
@@ -278,23 +292,19 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
           ),
         }))
         .sort((a, b) => a.distance - b.distance);
-
       if (validParcels.length === 0) {
         setDirections(null);
         return;
       }
-
       const waypoints = validParcels.slice(0, -1).map((parcel) => ({
         location: { lat: parcel.destination.latitude, lng: parcel.destination.longitude },
         stopover: true,
       }));
-
       const destinationParcel = validParcels[validParcels.length - 1];
       const destination = {
         lat: destinationParcel.destination.latitude,
         lng: destinationParcel.destination.longitude,
       };
-
       const directionsService = new window.google.maps.DirectionsService();
       directionsService.route(
         {
@@ -410,13 +420,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
 
         {(addingSlowdown || editMode) && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <TextField
-              select
-              label="Category"
-              value={category}
-              size="small"
-              onChange={(e) => setCategory(e.target.value)}
-            >
+            <TextField select label="Category" value={category} size="small" onChange={(e) => setCategory(e.target.value)}>
               <MenuItem value="Slowdown">Slowdown</MenuItem>
               <MenuItem value="Church">Church</MenuItem>
               <MenuItem value="Crosswalk">Crosswalk</MenuItem>

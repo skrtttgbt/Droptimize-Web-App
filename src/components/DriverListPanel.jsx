@@ -42,14 +42,6 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function formatETA(hours) {
-  if (!isFinite(hours) || hours <= 0) return "N/A";
-  const totalMinutes = Math.round(hours * 60);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
 function isInSlowdownZone(driverLocation, zone) {
   if (!driverLocation || !zone?.location) return false;
   const distKm = haversineDistance(
@@ -73,36 +65,13 @@ function getDisplaySpeed(driver) {
   return null;
 }
 
-function getLastFixAgeSec(driver) {
-  const ts = driver?.lastLocationAt;
-  const ms =
-    ts && typeof ts.toMillis === "function"
-      ? ts.toMillis()
-      : typeof ts === "number"
-      ? ts
-      : null;
-  return ms ? Math.round((Date.now() - ms) / 1000) : null;
-}
 
 export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   const [drivers, setDrivers] = useState([]);
   const [branchId, setBranchId] = useState(null);
   const [parcels, setParcels] = useState({});
   const [slowdowns, setSlowdowns] = useState([]);
-  const [userLocation, setUserLocation] = useState(null);
   const [crosswalkMap, setCrosswalkMap] = useState({});
-
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) =>
-        setUserLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }),
-      () => setUserLocation(null)
-    );
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -251,81 +220,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     return Math.min(...candidates);
   };
 
-  const getEtaForDriver = (driver, adminLoc) => {
-    const driverParcels = parcels[driver.id] || [];
-    if (!adminLoc || driverParcels.length === 0) return "N/A";
-
-    const displaySpeed = getDisplaySpeed(driver) || 45; 
-    const destinations = driverParcels
-      .filter((p) => p.destination?.latitude && p.destination?.longitude)
-      .map((p) => ({
-        lat: p.destination.latitude,
-        lng: p.destination.longitude,
-      }));
-
-    if (!destinations.length) return "N/A";
-
-    const fastRoute = [];
-    const visited = new Array(destinations.length).fill(false);
-    let current = { lat: adminLoc.latitude, lng: adminLoc.longitude };
-    for (let i = 0; i < destinations.length; i++) {
-      let best = -1;
-      let bestDist = Infinity;
-      for (let j = 0; j < destinations.length; j++) {
-        if (visited[j]) continue;
-        const d = haversineDistance(
-          current.lat,
-          current.lng,
-          destinations[j].lat,
-          destinations[j].lng
-        );
-        if (d < bestDist) {
-          bestDist = d;
-          best = j;
-        }
-      }
-      if (best !== -1) {
-        visited[best] = true;
-        fastRoute.push(destinations[best]);
-        current = destinations[best];
-      }
-    }
-
-    const fastDistance = fastRoute.reduce((acc, dest, idx) => {
-      const last =
-        idx === 0
-          ? { lat: adminLoc.latitude, lng: adminLoc.longitude }
-          : fastRoute[idx - 1];
-      return (
-        acc +
-        haversineDistance(last.lat, last.lng, dest.lat, dest.lng)
-      );
-    }, 0);
-
-    const slowDistance = destinations.reduce((acc, dest, idx) => {
-      const last =
-        idx === 0
-          ? { lat: adminLoc.latitude, lng: adminLoc.longitude }
-          : destinations[idx - 1];
-      return (
-        acc +
-        haversineDistance(last.lat, last.lng, dest.lat, dest.lng)
-      );
-    }, 0);
-
-    const allowanceMinutes = 3;
-    const n = destinations.length;
-    const fastMinutes =
-      Math.round((fastDistance / displaySpeed) * 60) +
-      allowanceMinutes * n;
-    const slowMinutes =
-      Math.round((slowDistance / (displaySpeed * 0.7)) * 60) +
-      allowanceMinutes * n;
-
-    return `${formatETA(fastMinutes / 60)} - ${formatETA(
-      slowMinutes / 60
-    )}`;
-  };
 
   const handleGiveWarning = async (driver) => {
     if (!user) return alert("User not authenticated.");
@@ -386,9 +280,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
             applicableLimit > 0 &&
             displaySpeed > applicableLimit;
 
-          const etaRange = getEtaForDriver(driver, userLocation);
-          const ageSec = getLastFixAgeSec(driver);
-
           return (
             <Accordion
               key={driver.id}
@@ -419,11 +310,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
                         >
                           Speed: {typeof displaySpeed === "number" ? displaySpeed : "N/A"} km/h
                           {applicableLimit != null ? ` • Limit ${applicableLimit}` : ""}
-                        </Typography>
-
-                        <Typography variant="body2" color="text.secondary">
-                          ETA: {etaRange}
-                          {ageSec != null && ageSec > 30 ? ` • last fix ${ageSec}s ago` : ""}
                         </Typography>
                       </Box>
                     </Box>

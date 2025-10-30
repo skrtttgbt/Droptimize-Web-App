@@ -23,8 +23,8 @@ import {
   Divider,
   Stack,
   TextField,
+  Chip,
 } from "@mui/material";
-import { CheckBox } from "@mui/icons-material";
 
 function haversineDistanceKM(lat1, lon1, lat2, lon2) {
   const toRad = (x) => (x * Math.PI) / 180;
@@ -39,22 +39,18 @@ function haversineDistanceKM(lat1, lon1, lat2, lon2) {
 }
 
 export default function AssignDriverModal({ open, onClose, driver }) {
-  const [parcels, setParcels] = useState({
-    unassigned: [],
-    assignedToDriver: [],
-  });
+  const [parcels, setParcels] = useState({ unassigned: [], assignedToDriver: [] });
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(0);
   const [userLocation, setUserLocation] = useState(null);
   const [SpeedKmh, setSpeedKmh] = useState(45);
-  const allowanceMinutesPerParcel = 3;
-  
+  const allowanceMinutesPerParcel = 5;
+
   useEffect(() => {
     if (!navigator.geolocation) {
       setUserLocation(null);
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLocation({
@@ -67,9 +63,12 @@ export default function AssignDriverModal({ open, onClose, driver }) {
   }, []);
 
   useEffect(() => {
+    setSpeedKmh(Number(driver?.speedAvg) || 45);
+  }, [driver]);
+
+  useEffect(() => {
     if (!driver) return;
     const parcelsRef = collection(db, "parcels");
-
     const unsub = onSnapshot(parcelsRef, (snapshot) => {
       const allParcels = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
@@ -83,37 +82,32 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         region: (r.regionName || "").toLowerCase(),
       }));
 
-      const unassigned = allParcels
-        .filter(
-          (p) =>
-            p.status !== "Delivered" && 
-            !p.driverUid &&
-            !p.driverName &&
-            preferred.some(
-              (route) =>
-                (p.barangay || "").toLowerCase() === route.barangay &&
-                (p.municipality || "").toLowerCase() === route.municipality &&
-                (p.province || "").toLowerCase() === route.province &&
-                (p.region || "").toLowerCase() === route.region
-            )
+      const unassigned = allParcels.filter((p) => {
+        const notDelivered = p.status !== "Delivered";
+        const isUnassigned = !p.driverUid && !p.driverName;
+        if (!preferred.length) return notDelivered && isUnassigned; // fallback if no preferred routes
+        const matchPreferred = preferred.some(
+          (route) =>
+            (p.barangay || "").toLowerCase() === route.barangay &&
+            (p.municipality || "").toLowerCase() === route.municipality &&
+            (p.province || "").toLowerCase() === route.province &&
+            (p.region || "").toLowerCase() === route.region
         );
+        return notDelivered && isUnassigned && matchPreferred;
+      });
 
       const assignedToDriver = allParcels.filter(
-        (p) =>
-          p.status !== "Delivered" && 
-          p.driverUid === driver.id
+        (p) => p.status !== "Delivered" && p.driverUid === driver.id
       );
 
       setParcels({ unassigned, assignedToDriver });
       setLoading(false);
     });
-
     return () => unsub();
   }, [driver]);
 
   const computeTotalETA = (list) => {
     if (!userLocation || !list?.length) return "N/A";
-
     const destinations = list
       .filter(
         (p) =>
@@ -121,13 +115,10 @@ export default function AssignDriverModal({ open, onClose, driver }) {
           p.destination.latitude != null &&
           p.destination.longitude != null
       )
-      .map((p) => ({
-        lat: p.destination.latitude,
-        lng: p.destination.longitude,
-      }));
-
+      .map((p) => ({ lat: p.destination.latitude, lng: p.destination.longitude }));
     if (!destinations.length) return "N/A";
 
+    const speed = Number(SpeedKmh) || 1;
     let fastRoute = [];
     let visited = new Array(destinations.length).fill(false);
     let current = { lat: userLocation.latitude, lng: userLocation.longitude };
@@ -137,12 +128,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       let minDist = Infinity;
       for (let j = 0; j < destinations.length; j++) {
         if (visited[j]) continue;
-        const dist = haversineDistanceKM(
-          current.lat,
-          current.lng,
-          destinations[j].lat,
-          destinations[j].lng
-        );
+        const dist = haversineDistanceKM(current.lat, current.lng, destinations[j].lat, destinations[j].lng);
         if (dist < minDist) {
           minDist = dist;
           nearestIndex = j;
@@ -158,26 +144,14 @@ export default function AssignDriverModal({ open, onClose, driver }) {
     let fastDistance = 0;
     let lastFast = { lat: userLocation.latitude, lng: userLocation.longitude };
     for (const point of fastRoute) {
-      fastDistance += haversineDistanceKM(
-        lastFast.lat,
-        lastFast.lng,
-        point.lat,
-        point.lng
-      );
+      fastDistance += haversineDistanceKM(lastFast.lat, lastFast.lng, point.lat, point.lng);
       lastFast = point;
     }
 
-    const fastMinutes =
-      Math.round((fastDistance / SpeedKmh) * 60) +
-      allowanceMinutesPerParcel * destinations.length;
-
-    const formatTime = (mins) => {
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    };
-
-    return formatTime(fastMinutes);
+    const fastMinutes = Math.round((fastDistance / speed) * 60) + allowanceMinutesPerParcel * destinations.length;
+    const h = Math.floor(fastMinutes / 60);
+    const m = fastMinutes % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
   const handleAssign = async (parcel) => {
@@ -192,17 +166,19 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       console.error("Error assigning parcel:", error);
     }
   };
+
   const handleSaveAverage = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
     try {
-      await updateDoc(doc(db, "users", driver.id),{
-        speedAvg: SpeedKmh
+      await updateDoc(doc(db, "users", driver.id), {
+        speedAvg: Number(SpeedKmh) || 0,
       });
-      alert("Speed Average has been save Successfully!")
-    }catch(e){
-      console.error("Error assigning drivers speedlimit", e)
+      alert("Speed Average has been saved successfully!");
+    } catch (e) {
+      console.error("Error saving driver's speed average", e);
     }
-  }
+  };
+
   const handleUnassign = async (parcel) => {
     try {
       await updateDoc(doc(db, "parcels", parcel.id), {
@@ -233,7 +209,6 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         </Typography>
       );
 
-
     return (
       <List dense disablePadding>
         {list.map((parcel) => (
@@ -259,9 +234,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
               color={type === "unassigned" ? "primary" : "error"}
               size="small"
               onClick={() =>
-                type === "unassigned"
-                  ? handleAssign(parcel)
-                  : handleUnassign(parcel)
+                type === "unassigned" ? handleAssign(parcel) : handleUnassign(parcel)
               }
             >
               {type === "unassigned" ? "Assign" : "Unassign"}
@@ -271,6 +244,9 @@ export default function AssignDriverModal({ open, onClose, driver }) {
       </List>
     );
   };
+
+  const assignedCount = parcels.assignedToDriver.length;
+  const etcText = computeTotalETA(parcels.assignedToDriver);
 
   return (
     <Dialog
@@ -291,17 +267,26 @@ export default function AssignDriverModal({ open, onClose, driver }) {
             <Typography variant="h6">
               Manage Parcels — {driver?.fullName || "Driver"}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Total ETA: {computeTotalETA(parcels.assignedToDriver)}
-            </Typography>
-            {/* Speed Average */}
-            <Typography variant="body2" color="text.secondary">
-              Speed Average
-            </Typography>
-            <TextField type="number" defaultValue={driver?.speedAvg || 45} placeholder="Enter the SpeedKmh Average default (45kmh)" onChange={(e) => setSpeedKmh(e.target.value)}/>
-            <Button onClick={handleSaveAverage} variant="outlined" color="primary">
-              Save Average
-            </Button>
+
+            <Stack direction="row" spacing={1} mt={1} alignItems="center" flexWrap="wrap">
+              <Chip label={`Parcels Assigned: ${assignedCount}`} />
+              <Chip label={`Estimated Time of Completion: ${etcText}`} />
+            </Stack>
+
+            <Stack direction="row" spacing={1} mt={2} alignItems="center">
+              <Typography variant="body2" color="text.secondary">Speed Average (km/h)</Typography>
+              <TextField
+                size="small"
+                type="number"
+                value={SpeedKmh}
+                onChange={(e) => setSpeedKmh(Number(e.target.value))}
+                placeholder="Enter SpeedKmh Average (default 45)"
+                sx={{ width: 180 }}
+              />
+              <Button onClick={handleSaveAverage} variant="outlined" color="primary">
+                Save Average
+              </Button>
+            </Stack>
           </Box>
         </Stack>
       </DialogTitle>
@@ -315,8 +300,8 @@ export default function AssignDriverModal({ open, onClose, driver }) {
         textColor="primary"
         indicatorColor="primary"
       >
-        <Tab label="Unassigned Parcels" />
-        <Tab label="Assigned Parcels" />
+        <Tab label={`Unassigned Parcels (${parcels.unassigned.length})`} />
+        <Tab label={`Assigned Parcels (${assignedCount})`} />
       </Tabs>
 
       <DialogContent dividers sx={{ minHeight: 300, p: 2 }}>
