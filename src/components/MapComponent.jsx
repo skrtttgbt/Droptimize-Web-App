@@ -40,6 +40,7 @@ const CATEGORY_COLORS = {
 const UPDATE_INTERVAL_MS = 1500;
 const MOVING_THRESHOLD_M = 3;
 
+// ---- heading helpers
 function normalizeDeg(d) {
   return ((d % 360) + 360) % 360;
 }
@@ -56,6 +57,7 @@ function smoothHeading(prevDeg, nextDeg, factor = 0.35) {
   const delta = shortestArcDelta(prevDeg, nextDeg);
   return normalizeDeg(prevDeg + delta * factor);
 }
+// ---- bearings / distance
 function bearingBetween(a, b) {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const toDeg = (rad) => (rad * 180) / Math.PI;
@@ -99,21 +101,32 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
   const [directions, setDirections] = useState(null);
   const [driverPos, setDriverPos] = useState(null);
   const [driverHeading, setDriverHeading] = useState(0);
+  const [driverSpeed, setDriverSpeed] = useState(0); // <-- live speed (km/h)
   const [searchText, setSearchText] = useState("");
   const autocompleteRef = useRef(null);
 
   const prevDriverPosRef = useRef(null);
+  const prevSampleTsRef = useRef(null);
+  const speedEmaRef = useRef(0);
+  const posWindowRef = useRef([]); // sliding window of recent points for stop-detect
+  const stopHoldUntilRef = useRef(0);
+
   const lastPanTsRef = useRef(0);
   const zoomLockedRef = useRef(false);
   const lastHeadingDegRef = useRef(0);
   const lastHeadingUpdateTsRef = useRef(0);
   const lastGeoUpdateTsRef = useRef(0);
 
+  const STATIONARY_WINDOW_MS = 3000;
+  const STATIONARY_DIST_M = 6;
+  const ZERO_HOLD_MS = 2000;
+
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
     libraries: ["places", "geometry"],
   });
 
+  // ---- branch
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -129,6 +142,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     })();
   }, [user]);
 
+  // ---- admin browser geolocation just to center the map initially
   useEffect(() => {
     if (!isLoaded) return;
     if (!("geolocation" in navigator)) return;
@@ -148,6 +162,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     };
   }, [isLoaded]);
 
+  // ---- branch slowdowns
   useEffect(() => {
     if (!branchId) return;
     const branchRef = doc(db, "branches", branchId);
@@ -166,6 +181,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     return () => unsub();
   }, [branchId]);
 
+  // ---- selected driver live doc (location + speed like the mobile)
   useEffect(() => {
     if (!selectedDriver?.id) {
       setDriverPos(null);
@@ -177,38 +193,115 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
       (snap) => {
         if (!snap.exists()) return;
         const d = snap.data();
-        const loc = d?.location;
-        if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
-          const current = { lat: loc.latitude, lng: loc.longitude };
-          setDriverPos(current);
-          setCenter((c) => c ?? current);
-          const now = Date.now();
-          let nextHeading = null;
-          if (typeof d?.heading === "number" && Number.isFinite(d.heading)) {
-            nextHeading = normalizeDeg(d.heading);
-          } else if (prevDriverPosRef.current) {
-            const movedM = haversineMeters(prevDriverPosRef.current, current);
-            if (movedM > MOVING_THRESHOLD_M) {
-              nextHeading = bearingBetween(prevDriverPosRef.current, current);
-            }
-          }
-          if (nextHeading != null) {
-            const timeSince = now - (lastHeadingUpdateTsRef.current || 0);
-            if (timeSince >= UPDATE_INTERVAL_MS) {
-              const smoothed = smoothHeading(lastHeadingDegRef.current ?? 0, nextHeading, 0.35);
-              lastHeadingDegRef.current = smoothed;
-              lastHeadingUpdateTsRef.current = now;
-              setDriverHeading(smoothed);
-            }
-          }
-          prevDriverPosRef.current = current;
+
+        // normalize to {lat,lng,heading,speed,ts}
+        let loc = null;
+        if (d?.loc && typeof d.loc.lat === "number" && typeof d.loc.lng === "number") {
+          loc = {
+            lat: d.loc.lat,
+            lng: d.loc.lng,
+            heading: d.loc.heading,
+            speed: d.loc.speed, // km/h
+            ts: typeof d.loc.ts === "number" ? d.loc.ts : null,
+          };
+        } else if (
+          d?.location &&
+          typeof d.location.latitude === "number" &&
+          typeof d.location.longitude === "number"
+        ) {
+          loc = {
+            lat: d.location.latitude,
+            lng: d.location.longitude,
+            heading: d.heading,
+            speed: d.location.speedKmh ?? d.speed, // legacy
+            ts: d.location.ts ?? null,
+          };
         }
+
+        if (!loc) return;
+
+        // set marker position
+        const current = { lat: loc.lat, lng: loc.lng };
+        setDriverPos(current);
+        setCenter((c) => c ?? current);
+
+        // derive course if needed
+        const nowTs = Date.now();
+        let nextHeading = null;
+        if (typeof loc.heading === "number" && Number.isFinite(loc.heading)) {
+          nextHeading = normalizeDeg(loc.heading);
+        } else if (prevDriverPosRef.current) {
+          const movedM = haversineMeters(prevDriverPosRef.current, current);
+          if (movedM > MOVING_THRESHOLD_M) {
+            nextHeading = bearingBetween(prevDriverPosRef.current, current);
+          }
+        }
+        if (nextHeading != null) {
+          const timeSince = nowTs - (lastHeadingUpdateTsRef.current || 0);
+          if (timeSince >= UPDATE_INTERVAL_MS) {
+            const smoothed = smoothHeading(lastHeadingDegRef.current ?? 0, nextHeading, 0.35);
+            lastHeadingDegRef.current = smoothed;
+            lastHeadingUpdateTsRef.current = nowTs;
+            setDriverHeading(smoothed);
+          }
+        }
+
+        // ----- speed like mobile: prefer saved km/h; else derive from samples
+        let kmh = Number.isFinite(loc.speed) ? Number(loc.speed) : NaN;
+
+        // build sample window
+        const sampleTs = typeof loc.ts === "number" ? loc.ts : nowTs;
+        posWindowRef.current.push({ ts: sampleTs, ...current });
+        const cutoff = sampleTs - STATIONARY_WINDOW_MS;
+        posWindowRef.current = posWindowRef.current.filter((p) => p.ts >= cutoff);
+
+        if (!Number.isFinite(kmh)) {
+          // derive from distance / time between last sample and this one
+          if (prevDriverPosRef.current && prevSampleTsRef.current) {
+            const distM = haversineMeters(prevDriverPosRef.current, current);
+            const dt = Math.max(0.5, (sampleTs - prevSampleTsRef.current) / 1000);
+            const mps = distM > 5 && dt > 0.8 ? distM / dt : 0;
+            kmh = mps * 3.6;
+          } else {
+            kmh = 0;
+          }
+        }
+
+        // EMA smoothing
+        const alpha = 0.25;
+        const mpsRaw = Math.max(0, kmh / 3.6);
+        speedEmaRef.current = alpha * mpsRaw + (1 - alpha) * (speedEmaRef.current || 0);
+        kmh = speedEmaRef.current * 3.6;
+
+        // stationary clamp (small movement + tiny heading change over window)
+        if (posWindowRef.current.length >= 2) {
+          const first = posWindowRef.current[0];
+          const last = posWindowRef.current[posWindowRef.current.length - 1];
+          const dM = haversineMeters(first, last);
+          if (dM < STATIONARY_DIST_M) {
+            kmh = 0;
+          }
+        }
+
+        // debounce to 0
+        if (kmh < 3) kmh = 0;
+
+        // zero-hold
+        if (kmh === 0) stopHoldUntilRef.current = sampleTs + ZERO_HOLD_MS;
+        if (sampleTs < (stopHoldUntilRef.current || 0)) kmh = 0;
+
+        setDriverSpeed(Math.round(kmh));
+
+        // advance prevs
+        prevDriverPosRef.current = current;
+        prevSampleTsRef.current = sampleTs;
       },
       (err) => console.error("onSnapshot(user) error:", err)
     );
     return () => unsub();
   }, [selectedDriver]);
 
+  // ---- fetch nearby crosswalk nodes via Overpass (unchanged)
   useEffect(() => {
     if (!isLoaded || !center) return;
     const dist = 0.05;
@@ -240,6 +333,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     })();
   }, [isLoaded, center]);
 
+  // ---- subscribe parcels for selected driver
   useEffect(() => {
     if (!selectedDriver) {
       setDriverParcels([]);
@@ -272,6 +366,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     return () => unsub();
   }, [selectedDriver?.id, selectedDriver?.uid]);
 
+  // ---- build directions from driverPos to stops
   useEffect(() => {
     if (!isLoaded || !driverPos || driverParcels.length === 0) {
       setDirections(null);
@@ -334,6 +429,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     }
   }, [isLoaded, driverPos, driverParcels]);
 
+  // ---- follow the driver marker
   useEffect(() => {
     if (!mapRef?.current || !driverPos) return;
     const now = Date.now();
@@ -414,6 +510,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
 
   return (
     <Box sx={{ width: "100%", height: "100%", position: "relative" }}>
+      {/* Search bar */}
       <Box
         sx={{
           position: "absolute",
@@ -457,6 +554,27 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
           </Fab>
         )}
       </Box>
+
+      {/* Quick readout chip (driver speed) */}
+      {driverPos ? (
+        <Box
+          sx={{
+            position: "absolute",
+            top: 16,
+            right: 16,
+            zIndex: 1200,
+            bgcolor: "#fff",
+            borderRadius: 2,
+            px: 1.5,
+            py: 0.75,
+            boxShadow: 3,
+            fontWeight: 700,
+            color: driverSpeed > 0 ? "#29bf12" : "#7f8c8d",
+          }}
+        >
+          {driverSpeed} km/h
+        </Box>
+      ) : null}
 
       <Box
         sx={{

@@ -27,7 +27,7 @@ import {
 import { ExpandMore, MyLocation } from "@mui/icons-material";
 import GiveWarningButton from "./GiveWarningButton.jsx";
 
-const CROSSWALK_RADIUS_KM = 0.015; 
+const CROSSWALK_RADIUS_KM = 0.015;
 const CROSSWALK_LIMIT_KMH = 10;
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -42,29 +42,41 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function isInSlowdownZone(driverLocation, zone) {
-  if (!driverLocation || !zone?.location) return false;
-  const distKm = haversineDistance(
-    driverLocation.latitude,
-    driverLocation.longitude,
-    zone.location.lat,
-    zone.location.lng
-  );
+const getDriverLatLng = (driver) => {
+  if (driver?.loc && typeof driver.loc.lat === "number" && typeof driver.loc.lng === "number") {
+    return { latitude: driver.loc.lat, longitude: driver.loc.lng };
+  }
+  if (
+    driver?.location &&
+    typeof driver.location.latitude === "number" &&
+    typeof driver.location.longitude === "number"
+  ) {
+    return { latitude: driver.location.latitude, longitude: driver.location.longitude };
+  }
+  return null;
+};
+
+function isInSlowdownZone(driver, zone) {
+  const dl = getDriverLatLng(driver);
+  if (!dl || !zone?.location) return false;
+  const distKm = haversineDistance(dl.latitude, dl.longitude, zone.location.lat, zone.location.lng);
   const radiusKm = (zone.radius || 15) / 1000;
   return distKm <= radiusKm;
 }
 
 function getDisplaySpeed(driver) {
-  const loc = driver?.location || {};
-  if (typeof loc.speedKmh === "number" && isFinite(loc.speedKmh))
-    return Math.round(loc.speedKmh);
+  // prefer new loc.speed (km/h) written by the mobile app
+  if (typeof driver?.loc?.speed === "number" && isFinite(driver.loc.speed))
+    return Math.round(driver.loc.speed);
+  // legacy shapes
+  if (typeof driver?.location?.speedKmh === "number" && isFinite(driver.location.speedKmh))
+    return Math.round(driver.location.speedKmh);
   if (typeof driver?.speed === "number" && isFinite(driver.speed))
     return Math.round(driver.speed);
   if (typeof driver?.avgSpeed === "number" && isFinite(driver.avgSpeed))
     return Math.round(driver.avgSpeed);
   return null;
 }
-
 
 export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   const [drivers, setDrivers] = useState([]);
@@ -113,10 +125,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
 
   useEffect(() => {
     if (!branchId) return;
-    const qParcels = query(
-      collection(db, "parcels"),
-      where("status", "==", "Out for Delivery")
-    );
+    const qParcels = query(collection(db, "parcels"), where("status", "==", "Out for Delivery"));
     const unsub = onSnapshot(qParcels, (snapshot) => {
       const grouped = {};
       snapshot.docs.forEach((d) => {
@@ -133,11 +142,11 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     let cancelled = false;
 
     async function checkDriverCrosswalk(driver) {
-      const loc = driver?.location;
-      if (!loc?.latitude || !loc?.longitude) return [driver.id, false];
+      const dl = getDriverLatLng(driver);
+      if (!dl) return [driver.id, false];
 
-      const lat = loc.latitude;
-      const lng = loc.longitude;
+      const lat = dl.latitude;
+      const lng = dl.longitude;
 
       const delta = 0.00045;
       const minLat = lat - delta,
@@ -152,9 +161,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
       `;
       try {
         const res = await fetch(
-          `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(
-            query
-          )}`
+          `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`
         );
         const data = await res.json();
 
@@ -195,8 +202,8 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   }, [drivers]);
 
   const getApplicableLimit = (driver) => {
-    const loc = driver?.location;
-    if (!loc?.latitude || !loc?.longitude) return null;
+    const dl = getDriverLatLng(driver);
+    if (!dl) return null;
 
     const inCrosswalk = !!crosswalkMap[driver.id];
     const fsActiveLimits = slowdowns
@@ -208,7 +215,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
           typeof z.location.lng === "number" &&
           typeof z.radius === "number" &&
           typeof z.speedLimit === "number" &&
-          isInSlowdownZone(loc, z)
+          isInSlowdownZone(driver, z)
       )
       .map((z) => z.speedLimit);
 
@@ -219,7 +226,6 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     if (candidates.length === 0) return null;
     return Math.min(...candidates);
   };
-
 
   const handleGiveWarning = async (driver) => {
     if (!user) return alert("User not authenticated.");
@@ -232,7 +238,7 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
 
       await updateDoc(doc(db, "users", driver.id), {
         violations: arrayUnion({
-          driverLocation: driver.location || null,
+          driverLocation: getDriverLatLng(driver) || null,
           issuedAt: Timestamp.now(),
           message: "Speeding violation",
           distance,
@@ -251,9 +257,10 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   };
 
   const handleFocusOnMap = (driver) => {
-    if (!mapRef || !mapRef.current || !driver?.location) return;
-    const { latitude, longitude } = driver.location;
-    mapRef.current.panTo({ lat: latitude, lng: longitude });
+    if (!mapRef || !mapRef.current) return;
+    const dl = getDriverLatLng(driver);
+    if (!dl) return;
+    mapRef.current.panTo({ lat: dl.latitude, lng: dl.longitude });
     mapRef.current.setZoom(17);
     onDriverSelect && onDriverSelect(driver);
   };
@@ -262,17 +269,13 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
     <Card sx={{ height: "100%", overflowY: "auto", borderRadius: 3, boxShadow: 4 }}>
       <CardContent sx={{ p: 2 }}>
         {drivers.length === 0 && (
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ textAlign: "center", mt: 2 }}
-          >
+          <Typography variant="body1" color="text.secondary" sx={{ textAlign: "center", mt: 2 }}>
             No drivers found
           </Typography>
         )}
 
         {drivers.map((driver) => {
-          const applicableLimit = getApplicableLimit(driver); // null | number
+          const applicableLimit = getApplicableLimit(driver);
           const displaySpeed = getDisplaySpeed(driver);
           const isOverspeeding =
             typeof displaySpeed === "number" &&
@@ -342,13 +345,11 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
                           ? `${driver?.vehicleType || "—"} | ${driver?.model || "—"}`
                           : "N/A"}
                       </Typography>
-                      <Typography variant="body2">
-                        Plate: {driver?.plateNumber || "N/A"}
-                      </Typography>
+                      <Typography variant="body2">Plate: {driver?.plateNumber || "N/A"}</Typography>
                     </Box>
                   </Grid>
 
-                  {driver?.location && (
+                  {getDriverLatLng(driver) && (
                     <Grid>
                       <Tooltip title="Focus on Map">
                         <IconButton onClick={() => handleFocusOnMap(driver)}>

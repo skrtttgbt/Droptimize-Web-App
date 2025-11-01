@@ -25,6 +25,21 @@ export default function MapView() {
   const [selectedDriver, setSelectedDriver] = useState(null);
   const mapRef = useRef(null);
 
+  const getLatLngFromDriver = (d) => {
+    if (!d) return null;
+    if (d.loc && typeof d.loc.lat === "number" && typeof d.loc.lng === "number") {
+      return { lat: d.loc.lat, lng: d.loc.lng };
+    }
+    if (
+      d.location &&
+      typeof d.location.latitude === "number" &&
+      typeof d.location.longitude === "number"
+    ) {
+      return { lat: d.location.latitude, lng: d.location.longitude };
+    }
+    return null;
+  };
+
   useEffect(() => {
     document.title = "Map View";
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -40,9 +55,9 @@ export default function MapView() {
           const driverData = { id: docSnap.id, ...docSnap.data() };
           setSelectedDriver(driverData);
 
-          if (mapRef.current && driverData.location) {
-            const { latitude, longitude } = driverData.location;
-            mapRef.current.panTo({ lat: latitude, lng: longitude });
+          const p = getLatLngFromDriver(driverData);
+          if (mapRef.current && p) {
+            mapRef.current.panTo(p);
             mapRef.current.setZoom(17);
           }
         }
@@ -60,9 +75,9 @@ export default function MapView() {
     setSelectedDriver(driver);
     setDrawerOpen(false);
 
-    if (mapRef.current && driver.location) {
-      const { latitude, longitude } = driver.location;
-      mapRef.current.panTo({ lat: latitude, lng: longitude });
+    const p = getLatLngFromDriver(driver);
+    if (mapRef.current && p) {
+      mapRef.current.panTo(p);
       mapRef.current.setZoom(17);
     }
   }, []);
@@ -77,7 +92,6 @@ export default function MapView() {
         boxSizing: "border-box",
       }}
     >
-      {/* Header */}
       <Typography
         variant="h4"
         sx={{
@@ -90,7 +104,6 @@ export default function MapView() {
         Map View
       </Typography>
 
-      {/* Map Container */}
       <Paper
         elevation={3}
         sx={{
@@ -102,14 +115,8 @@ export default function MapView() {
           overflow: "hidden",
         }}
       >
-        {/* ✅ Pass the full driver data */}
-        <MapComponent
-          selectedDriver={selectedDriver}
-          user={user}
-          mapRef={mapRef}
-        />
+        <MapComponent selectedDriver={selectedDriver} user={user} mapRef={mapRef} />
 
-        {/* Drawer Button */}
         <Box sx={{ position: "absolute", top: 16, right: 16 }}>
           <Tooltip title="Drivers">
             <Fab
@@ -127,7 +134,6 @@ export default function MapView() {
         </Box>
       </Paper>
 
-      {/* Driver Drawer */}
       <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box
           sx={{
@@ -154,11 +160,7 @@ export default function MapView() {
           <Divider sx={{ mb: 1 }} />
 
           <Box sx={{ flexGrow: 1, overflowY: "auto" }}>
-            <DriverListPanel
-              user={user}
-              onDriverSelect={handleDriverSelect}
-              mapRef={mapRef}
-            />
+            <DriverListPanel user={user} onDriverSelect={handleDriverSelect} mapRef={mapRef} />
           </Box>
         </Box>
       </Drawer>
