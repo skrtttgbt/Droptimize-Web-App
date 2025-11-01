@@ -6,6 +6,7 @@ import {
   useJsApiLoader,
   TrafficLayer,
   DirectionsRenderer,
+  Autocomplete as GmapAutocomplete,
 } from "@react-google-maps/api";
 import { Box, Fab, Tooltip, TextField, MenuItem } from "@mui/material";
 import {
@@ -14,6 +15,7 @@ import {
   Save as SaveIcon,
   Delete as DeleteIcon,
   Close as CloseIcon,
+  Search as SearchIcon,
 } from "@mui/icons-material";
 import deliverLogo from "/src/assets/box.svg";
 import {
@@ -97,6 +99,8 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
   const [directions, setDirections] = useState(null);
   const [driverPos, setDriverPos] = useState(null);
   const [driverHeading, setDriverHeading] = useState(0);
+  const [searchText, setSearchText] = useState("");
+  const autocompleteRef = useRef(null);
 
   const prevDriverPosRef = useRef(null);
   const lastPanTsRef = useRef(0);
@@ -372,12 +376,88 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     setSlowdownPin({ lat: e.latLng.lat(), lng: e.latLng.lng() });
   };
 
+  const safePanZoom = (point) => {
+    const map = mapRef?.current;
+    if (!map) return;
+    if (typeof map.panTo === "function") map.panTo(point);
+    if (typeof map.setZoom === "function") map.setZoom(17);
+  };
+
+  const handlePlaceChanged = () => {
+    const ac = autocompleteRef.current;
+    if (!ac) return;
+    const place = ac.getPlace?.();
+    const loc = place?.geometry?.location;
+    if (loc) {
+      const point = { lat: loc.lat(), lng: loc.lng() };
+      safePanZoom(point);
+    }
+  };
+
+  const geocodeSearch = (query) => {
+    if (!isLoaded || !query?.trim()) return;
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ address: query }, (results, status) => {
+      if (status === "OK" && results?.[0]) {
+        const loc = results[0].geometry.location;
+        const point = { lat: loc.lat(), lng: loc.lng() };
+        safePanZoom(point);
+      } else {
+        console.warn("Geocode failed:", status);
+      }
+    });
+  };
+
   if (!isLoaded) {
     return <div style={{ textAlign: "center", marginTop: "2rem" }}>Loading map...</div>;
   }
 
   return (
     <Box sx={{ width: "100%", height: "100%", position: "relative" }}>
+      <Box
+        sx={{
+          position: "absolute",
+          top: 16,
+          left: 16,
+          display: "flex",
+          gap: 1,
+          zIndex: 1200,
+          width: "min(560px, 90vw)",
+          alignItems: "center",
+        }}
+      >
+        <GmapAutocomplete
+          onLoad={(ac) => (autocompleteRef.current = ac)}
+          onPlaceChanged={handlePlaceChanged}
+          options={{
+            fields: ["geometry", "name", "formatted_address"],
+            componentRestrictions: { country: ["ph"] },
+          }}
+        >
+          <TextField
+            fullWidth
+            size="small"
+            label="Search place"
+            placeholder="Search place or address"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") geocodeSearch(searchText);
+            }}
+            sx={{ bgcolor: "white", borderRadius: 1 }}
+          />
+        </GmapAutocomplete>
+
+        <Fab size="small" color="primary" onClick={() => geocodeSearch(searchText)}>
+          <SearchIcon />
+        </Fab>
+        {searchText && (
+          <Fab size="small" color="default" onClick={() => setSearchText("")}>
+            <CloseIcon />
+          </Fab>
+        )}
+      </Box>
+
       <Box
         sx={{
           position: "absolute",
