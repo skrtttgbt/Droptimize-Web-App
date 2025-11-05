@@ -107,7 +107,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
   }, [driver]);
 
   const computeTotalETA = (list) => {
-    if (!userLocation || !list?.length) return "N/A";
+    if (!userLocation || !list?.length) return "";
     const destinations = list
       .filter(
         (p) =>
@@ -116,7 +116,7 @@ export default function AssignDriverModal({ open, onClose, driver }) {
           p.destination.longitude != null
       )
       .map((p) => ({ lat: p.destination.latitude, lng: p.destination.longitude }));
-    if (!destinations.length) return "N/A";
+    if (!destinations.length) return "";
 
     const speed = Number(SpeedKmh) || 1;
     let fastRoute = [];
@@ -155,6 +155,10 @@ export default function AssignDriverModal({ open, onClose, driver }) {
   };
 
   const handleAssign = async (parcel) => {
+    if (!parcel.destination || parcel.destination.latitude === null || parcel.destination.longitude === null) {
+      alert("⚠️ Cannot assign parcel: Invalid destination. Please update the parcel location.");
+      return;
+    }
     try {
       await updateDoc(doc(db, "parcels", parcel.id), {
         driverUid: driver.id,
@@ -211,41 +215,70 @@ export default function AssignDriverModal({ open, onClose, driver }) {
 
     return (
       <List dense disablePadding>
-        {list.map((parcel) => (
-          <ListItem
-            key={parcel.id}
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              px: 2,
-              py: 1.5,
-              borderBottom: "1px solid #eee",
-            }}
-          >
-            <Box>
-              <Typography fontWeight={500}>{parcel.reference}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {parcel.barangay}, {parcel.municipality}
-              </Typography>
-            </Box>
-            <Button
-              variant={type === "unassigned" ? "contained" : "outlined"}
-              color={type === "unassigned" ? "primary" : "error"}
-              size="small"
-              onClick={() =>
-                type === "unassigned" ? handleAssign(parcel) : handleUnassign(parcel)
-              }
+        {list.map((parcel) => {
+          const isInvalid = !parcel.destination || parcel.destination.latitude === null || parcel.destination.longitude === null;
+          
+          return (
+            <ListItem
+              key={parcel.id}
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                px: 2,
+                py: 1.5,
+                borderBottom: "1px solid #eee",
+                bgcolor: isInvalid ? "#fff4f4" : "transparent",
+              }}
             >
-              {type === "unassigned" ? "Assign" : "Unassign"}
-            </Button>
-          </ListItem>
-        ))}
+              <Box sx={{ flex: 1 }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Typography fontWeight={500}>{parcel.reference}</Typography>
+                  {isInvalid && (
+                    <Chip 
+                      label="Invalid" 
+                      size="small" 
+                      sx={{ 
+                        bgcolor: "#f21b3f", 
+                        color: "#fff",
+                        fontSize: "0.7rem",
+                        height: 20
+                      }} 
+                    />
+                  )}
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  {parcel.barangay}, {parcel.municipality}
+                </Typography>
+                {isInvalid && (
+                  <Typography variant="caption" color="error">
+                    Missing destination coordinates
+                  </Typography>
+                )}
+              </Box>
+              <Button
+                variant={type === "unassigned" ? "contained" : "outlined"}
+                color={type === "unassigned" ? "primary" : "error"}
+                size="small"
+                disabled={isInvalid && type === "unassigned"}
+                onClick={() =>
+                  type === "unassigned" ? handleAssign(parcel) : handleUnassign(parcel)
+                }
+              >
+                {type === "unassigned" ? "Assign" : "Unassign"}
+              </Button>
+            </ListItem>
+          );
+        })}
       </List>
     );
   };
 
   const assignedCount = parcels.assignedToDriver.length;
+  const validAssignedCount = parcels.assignedToDriver.filter(
+    (p) => p.destination && p.destination.latitude !== null && p.destination.longitude !== null
+  ).length;
+  const invalidAssignedCount = assignedCount - validAssignedCount;
   const etcText = computeTotalETA(parcels.assignedToDriver);
 
   return (
@@ -269,8 +302,14 @@ export default function AssignDriverModal({ open, onClose, driver }) {
             </Typography>
 
             <Stack direction="row" spacing={1} mt={1} alignItems="center" flexWrap="wrap">
-              <Chip label={`Parcels Assigned: ${assignedCount}`} />
-              <Chip label={`Estimated Time of Completion: ${etcText}`} />
+              <Chip label={`Valid Parcels: ${validAssignedCount}`} color="primary" />
+              {invalidAssignedCount > 0 && (
+                <Chip 
+                  label={`Invalid: ${invalidAssignedCount}`} 
+                  sx={{ bgcolor: "#f21b3f", color: "#fff" }}
+                />
+              )}
+              {etcText && <Chip label={`ETC: ${etcText}`} />}
             </Stack>
 
             <Stack direction="row" spacing={1} mt={2} alignItems="center">

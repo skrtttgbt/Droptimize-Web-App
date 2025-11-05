@@ -83,7 +83,8 @@ export default function ParcelList({ parcels = [], loading = false }) {
       <Grid container spacing={2}>
         {sortedParcels.map((parcel, index) => {
           const statusKey = parcel.status?.toLowerCase() || "pending";
-          const color = statusColors[statusKey] || "#c4cad0";
+          const isInvalid = !parcel.destination || parcel.destination.latitude === null || parcel.destination.longitude === null;
+          const color = isInvalid ? "#f21b3f" : (statusColors[statusKey] || "#c4cad0");
 
           return (
             <Grid
@@ -102,6 +103,7 @@ export default function ParcelList({ parcels = [], loading = false }) {
                   "&:hover": { boxShadow: 6, transform: "translateY(-3px)" },
                   display: "flex",
                   alignItems: "center",
+                  border: isInvalid ? "2px solid #f21b3f" : "none",
                 }}
                 onClick={() => handleOpen(parcel)}
               >
@@ -119,17 +121,24 @@ export default function ParcelList({ parcels = [], loading = false }) {
 
                 <CardContent sx={{ flex: 1 }}>
                   <Stack spacing={0.5}>
-                    <Chip
-                      label={parcel.status || "Pending"}
-                      size="small"
-                      sx={{
-                        backgroundColor: color,
-                        color: "#fff",
-                        fontSize: "0.75rem",
-                        textTransform: "capitalize",
-                        width: "fit-content",
-                      }}
-                    />
+                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                      <Chip
+                        label={isInvalid ? "Invalid" : (parcel.status || "Pending")}
+                        size="small"
+                        sx={{
+                          backgroundColor: color,
+                          color: "#fff",
+                          fontSize: "0.75rem",
+                          textTransform: "capitalize",
+                          width: "fit-content",
+                        }}
+                      />
+                    {isInvalid && (
+                      <Typography variant="caption" color="error" sx={{ fontWeight: 500 }}>
+                        ⚠️ Missing destination
+                      </Typography>
+                    )}
+                    </Box>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
                       {parcel.recipient || "Unnamed Recipient"}
                     </Typography>
@@ -139,6 +148,7 @@ export default function ParcelList({ parcels = [], loading = false }) {
                         parcel.province,
                       ].filter(Boolean).join(", ") || "No address available"}
                     </Typography>
+
                     <Typography variant="body2" color="text.secondary">
                       Added: {formatDate(parcel.dateAdded)}
                     </Typography>

@@ -22,12 +22,28 @@ async function geocodeAddress({ street, barangay, municipalityName, provinceName
   const parts = [street, barangay, municipalityName, provinceName, regionName]
     .filter(Boolean)
     .join(", ");
+  
+  // If no parts to geocode, return null
+  if (!parts.trim()) {
+    console.warn("No address parts to geocode");
+    return null;
+  }
+  
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(parts)}`;
   try {
     const res = await fetch(url, { headers: { "User-Agent": "ParcelApp/1.0" } });
     const data = await res.json();
-    if (data.length > 0) {
-      return { latitude: parseFloat(data[0].lat), longitude: parseFloat(data[0].lon) };
+    if (data.length > 0 && data[0].lat && data[0].lon) {
+      const latitude = parseFloat(data[0].lat);
+      const longitude = parseFloat(data[0].lon);
+      
+      // Validate that coordinates are valid numbers
+      if (isNaN(latitude) || isNaN(longitude)) {
+        console.warn("Invalid coordinates from geocoding");
+        return null;
+      }
+      
+      return { latitude, longitude };
     }
   } catch (err) {
     console.error("❌ Geocoding failed:", err);
@@ -75,7 +91,6 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
     parcelId: Date.now(), 
     recipient: "",
     recipientContact: "",
-    weight: "",
     street: "",
     status: "Pending",
     region: "",
@@ -164,22 +179,57 @@ export default function ParcelEntryModal({ open, handleClose, onSave }) {
           regionName: row.regionName,
         });
 
-        await addParcel(
-          {
-            weight: row.weight,
-            status: row.status,
-            recipient: row.recipient,
-            recipientContact: row.recipientContact,
-            street: row.street,
-            region: row.regionName,
-            province: row.provinceName,
-            municipality: row.municipalityName,
-            barangay: row.barangayName,
-            dateAdded: serverTimestamp(),
-            destination: destination || { latitude: null, longitude: null },
-          },
-          user.uid
-        );
+        // If geocoding fails, try a fallback approach or skip the parcel
+        if (!destination) {
+          // Try with just the municipality and province
+          const fallbackDestination = await geocodeAddress({
+            municipalityName: row.municipalityName,
+            provinceName: row.provinceName,
+          });
+          
+          if (!fallbackDestination) {
+            // If still no location, show an error and skip this parcel
+            console.warn(`Could not geocode address for parcel ${row.recipient}. Skipping.`);
+            alert(`⚠️ Could not geocode address for parcel ${row.recipient}. This parcel will be skipped.`);
+            return; // Skip this parcel
+          }
+          
+          // Use fallback destination
+          await addParcel(
+            {
+              weight: row.weight,
+              status: row.status,
+              recipient: row.recipient,
+              recipientContact: row.recipientContact,
+              street: row.street,
+              region: row.regionName,
+              province: row.provinceName,
+              municipality: row.municipalityName,
+              barangay: row.barangayName,
+              dateAdded: serverTimestamp(),
+              destination: fallbackDestination,
+            },
+            user.uid
+          );
+        } else {
+          // Use the successfully geocoded destination
+          await addParcel(
+            {
+              weight: row.weight,
+              status: row.status,
+              recipient: row.recipient,
+              recipientContact: row.recipientContact,
+              street: row.street,
+              region: row.regionName,
+              province: row.provinceName,
+              municipality: row.municipalityName,
+              barangay: row.barangayName,
+              dateAdded: serverTimestamp(),
+              destination: destination,
+            },
+            user.uid
+          );
+        }
 
         await new Promise((r) => setTimeout(r, 300));
       }

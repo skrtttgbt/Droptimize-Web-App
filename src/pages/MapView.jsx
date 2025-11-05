@@ -82,6 +82,15 @@ export default function MapView() {
     }
   }, []);
 
+  const handleDeselectDriver = useCallback(() => {
+    setSelectedDriver(null);
+    // Reset map to default center
+    if (mapRef.current) {
+      mapRef.current.setCenter({ lat: 14.5995, lng: 120.9842 });
+      mapRef.current.setZoom(16);
+    }
+  }, []);
+
   return (
     <Box
       sx={{
@@ -117,7 +126,22 @@ export default function MapView() {
       >
         <MapComponent selectedDriver={selectedDriver} user={user} mapRef={mapRef} />
 
-        <Box sx={{ position: "absolute", top: 16, right: 16 }}>
+        <Box sx={{ position: "absolute", top: 16, right: 16, display: "flex", gap: 1 }}>
+          {selectedDriver && (
+            <Tooltip title="Deselect Driver">
+              <Fab
+                size="small"
+                onClick={handleDeselectDriver}
+                sx={{
+                  bgcolor: "#f44336",
+                  "&:hover": { bgcolor: "#d32f2f" },
+                  color: "#fff",
+                }}
+              >
+                ✕
+              </Fab>
+            </Tooltip>
+          )}
           <Tooltip title="Drivers">
             <Fab
               size="small"
@@ -160,7 +184,7 @@ export default function MapView() {
           <Divider sx={{ mb: 1 }} />
 
           <Box sx={{ flexGrow: 1, overflowY: "auto" }}>
-            <DriverListPanel user={user} onDriverSelect={handleDriverSelect} mapRef={mapRef} />
+            <DriverListPanel user={user} onDriverSelect={handleDriverSelect} mapRef={mapRef} selectedDriver={selectedDriver} />
           </Box>
         </Box>
       </Drawer>

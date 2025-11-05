@@ -40,7 +40,6 @@ const CATEGORY_COLORS = {
 const UPDATE_INTERVAL_MS = 1500;
 const MOVING_THRESHOLD_M = 3;
 
-// ---- heading helpers
 function normalizeDeg(d) {
   return ((d % 360) + 360) % 360;
 }
@@ -57,7 +56,6 @@ function smoothHeading(prevDeg, nextDeg, factor = 0.35) {
   const delta = shortestArcDelta(prevDeg, nextDeg);
   return normalizeDeg(prevDeg + delta * factor);
 }
-// ---- bearings / distance
 function bearingBetween(a, b) {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const toDeg = (rad) => (rad * 180) / Math.PI;
@@ -86,6 +84,7 @@ function haversineMeters(a, b) {
 
 export default function MapComponent({ user, selectedDriver, mapRef }) {
   const [center, setCenter] = useState({ lat: 14.5995, lng: 120.9842 });
+  const [userLocation, setUserLocation] = useState(null);
   const [showTraffic, setShowTraffic] = useState(true);
   const [addingSlowdown, setAddingSlowdown] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -101,15 +100,17 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
   const [directions, setDirections] = useState(null);
   const [driverPos, setDriverPos] = useState(null);
   const [driverHeading, setDriverHeading] = useState(0);
-  const [driverSpeed, setDriverSpeed] = useState(0); // <-- live speed (km/h)
+  const [driverSpeed, setDriverSpeed] = useState(0);
+  const [hasConnection, setHasConnection] = useState(true);
   const [searchText, setSearchText] = useState("");
   const autocompleteRef = useRef(null);
 
   const prevDriverPosRef = useRef(null);
   const prevSampleTsRef = useRef(null);
   const speedEmaRef = useRef(0);
-  const posWindowRef = useRef([]); // sliding window of recent points for stop-detect
+  const posWindowRef = useRef([]);
   const stopHoldUntilRef = useRef(0);
+  const lastLocationUpdateRef = useRef(null);
 
   const lastPanTsRef = useRef(0);
   const zoomLockedRef = useRef(false);
@@ -126,7 +127,6 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     libraries: ["places", "geometry"],
   });
 
-  // ---- branch
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -142,7 +142,6 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     })();
   }, [user]);
 
-  // ---- admin browser geolocation just to center the map initially
   useEffect(() => {
     if (!isLoaded) return;
     if (!("geolocation" in navigator)) return;
@@ -152,7 +151,11 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
         const now = Date.now();
         if (now - (lastGeoUpdateTsRef.current || 0) < UPDATE_INTERVAL_MS) return;
         lastGeoUpdateTsRef.current = now;
-        setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const userLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserLocation(userLoc);
+        if (!selectedDriver?.id) {
+          setCenter(userLoc);
+        }
       },
       (err) => console.warn("geolocation watch error:", err),
       opts
@@ -160,9 +163,8 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     return () => {
       if (watchId != null) navigator.geolocation.clearWatch(watchId);
     };
-  }, [isLoaded]);
+  }, [isLoaded, selectedDriver?.id]);
 
-  // ---- branch slowdowns
   useEffect(() => {
     if (!branchId) return;
     const branchRef = doc(db, "branches", branchId);
@@ -181,11 +183,27 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     return () => unsub();
   }, [branchId]);
 
-  // ---- selected driver live doc (location + speed like the mobile)
   useEffect(() => {
+    setDriverPos(null);
+    setDriverHeading(0);
+    setDriverSpeed(0);
+    setDirections(null);
+    setDriverParcels([]);
+    setHasConnection(true);
+    prevDriverPosRef.current = null;
+    prevSampleTsRef.current = null;
+    speedEmaRef.current = 0;
+    posWindowRef.current = [];
+    stopHoldUntilRef.current = 0;
+    lastHeadingDegRef.current = 0;
+    lastHeadingUpdateTsRef.current = 0;
+    zoomLockedRef.current = false;
+    lastLocationUpdateRef.current = null;
+
     if (!selectedDriver?.id) {
-      setDriverPos(null);
-      setDirections(null);
+      if (userLocation) {
+        setCenter(userLocation);
+      }
       return;
     }
     const unsub = onSnapshot(
@@ -194,14 +212,13 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
         if (!snap.exists()) return;
         const d = snap.data();
 
-        // normalize to {lat,lng,heading,speed,ts}
         let loc = null;
         if (d?.loc && typeof d.loc.lat === "number" && typeof d.loc.lng === "number") {
           loc = {
             lat: d.loc.lat,
             lng: d.loc.lng,
             heading: d.loc.heading,
-            speed: d.loc.speed, // km/h
+            speed: d.loc.speed,
             ts: typeof d.loc.ts === "number" ? d.loc.ts : null,
           };
         } else if (
@@ -213,19 +230,20 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
             lat: d.location.latitude,
             lng: d.location.longitude,
             heading: d.heading,
-            speed: d.location.speedKmh ?? d.speed, // legacy
+            speed: d.location.speedKmh ?? d.speed,
             ts: d.location.ts ?? null,
           };
         }
 
         if (!loc) return;
 
-        // set marker position
+        setHasConnection(true);
+        lastLocationUpdateRef.current = Date.now();
+
         const current = { lat: loc.lat, lng: loc.lng };
         setDriverPos(current);
         setCenter((c) => c ?? current);
 
-        // derive course if needed
         const nowTs = Date.now();
         let nextHeading = null;
         if (typeof loc.heading === "number" && Number.isFinite(loc.heading)) {
@@ -236,27 +254,30 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
             nextHeading = bearingBetween(prevDriverPosRef.current, current);
           }
         }
+
         if (nextHeading != null) {
-          const timeSince = nowTs - (lastHeadingUpdateTsRef.current || 0);
-          if (timeSince >= UPDATE_INTERVAL_MS) {
-            const smoothed = smoothHeading(lastHeadingDegRef.current ?? 0, nextHeading, 0.35);
-            lastHeadingDegRef.current = smoothed;
-            lastHeadingUpdateTsRef.current = nowTs;
-            setDriverHeading(smoothed);
-          }
+          lastHeadingDegRef.current = nextHeading;
+          setDriverHeading(nextHeading);
+          lastHeadingUpdateTsRef.current = nowTs;
+        } else {
+          setDriverHeading(lastHeadingDegRef.current || 0);
         }
 
-        // ----- speed like mobile: prefer saved km/h; else derive from samples
         let kmh = Number.isFinite(loc.speed) ? Number(loc.speed) : NaN;
 
-        // build sample window
         const sampleTs = typeof loc.ts === "number" ? loc.ts : nowTs;
         posWindowRef.current.push({ ts: sampleTs, ...current });
         const cutoff = sampleTs - STATIONARY_WINDOW_MS;
         posWindowRef.current = posWindowRef.current.filter((p) => p.ts >= cutoff);
 
+        if (prevDriverPosRef.current) {
+          const distM = haversineMeters(prevDriverPosRef.current, current);
+          if (distM < 3) {
+            kmh = 0;
+          }
+        }
+
         if (!Number.isFinite(kmh)) {
-          // derive from distance / time between last sample and this one
           if (prevDriverPosRef.current && prevSampleTsRef.current) {
             const distM = haversineMeters(prevDriverPosRef.current, current);
             const dt = Math.max(0.5, (sampleTs - prevSampleTsRef.current) / 1000);
@@ -267,32 +288,35 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
           }
         }
 
-        // EMA smoothing
-        const alpha = 0.25;
-        const mpsRaw = Math.max(0, kmh / 3.6);
-        speedEmaRef.current = alpha * mpsRaw + (1 - alpha) * (speedEmaRef.current || 0);
-        kmh = speedEmaRef.current * 3.6;
-
-        // stationary clamp (small movement + tiny heading change over window)
         if (posWindowRef.current.length >= 2) {
           const first = posWindowRef.current[0];
           const last = posWindowRef.current[posWindowRef.current.length - 1];
           const dM = haversineMeters(first, last);
           if (dM < STATIONARY_DIST_M) {
             kmh = 0;
+            speedEmaRef.current = 0;
           }
         }
 
-        // debounce to 0
-        if (kmh < 3) kmh = 0;
+        if (kmh > 0) {
+          const alpha = 0.25;
+          const mpsRaw = Math.max(0, kmh / 3.6);
+          speedEmaRef.current = alpha * mpsRaw + (1 - alpha) * (speedEmaRef.current || 0);
+          kmh = speedEmaRef.current * 3.6;
+        } else {
+          speedEmaRef.current = 0;
+        }
 
-        // zero-hold
+        if (kmh < 3) {
+          kmh = 0;
+          speedEmaRef.current = 0;
+        }
+
         if (kmh === 0) stopHoldUntilRef.current = sampleTs + ZERO_HOLD_MS;
         if (sampleTs < (stopHoldUntilRef.current || 0)) kmh = 0;
 
         setDriverSpeed(Math.round(kmh));
 
-        // advance prevs
         prevDriverPosRef.current = current;
         prevSampleTsRef.current = sampleTs;
       },
@@ -301,7 +325,21 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     return () => unsub();
   }, [selectedDriver]);
 
-  // ---- fetch nearby crosswalk nodes via Overpass (unchanged)
+  useEffect(() => {
+    if (!selectedDriver || !driverPos) return;
+
+    const checkInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastUpdate = now - (lastLocationUpdateRef.current || now);
+
+      if (timeSinceLastUpdate > 10000) {
+        setHasConnection(false);
+      }
+    }, 2000);
+
+    return () => clearInterval(checkInterval);
+  }, [selectedDriver, driverPos]);
+
   useEffect(() => {
     if (!isLoaded || !center) return;
     const dist = 0.05;
@@ -333,10 +371,10 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     })();
   }, [isLoaded, center]);
 
-  // ---- subscribe parcels for selected driver
   useEffect(() => {
+    setDriverParcels([]);
+
     if (!selectedDriver) {
-      setDriverParcels([]);
       return;
     }
     const uidCandidates = [selectedDriver.id, selectedDriver.uid]
@@ -366,7 +404,6 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     return () => unsub();
   }, [selectedDriver?.id, selectedDriver?.uid]);
 
-  // ---- build directions from driverPos to stops
   useEffect(() => {
     if (!isLoaded || !driverPos || driverParcels.length === 0) {
       setDirections(null);
@@ -375,12 +412,20 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     try {
       const origin = driverPos;
       const validParcels = driverParcels
-        .filter(
-          (p) =>
-            p.destination &&
-            typeof p.destination.latitude === "number" &&
-            typeof p.destination.longitude === "number"
-        )
+        .filter((p) => {
+          if (p.destination && 
+              typeof p.destination.latitude === "number" && 
+              typeof p.destination.longitude === "number") {
+            return true;
+          }
+          if (!p.destination || 
+              p.destination.latitude === null || 
+              p.destination.longitude === null) {
+            console.warn("Parcel with null destination:", p.id);
+            return false;
+          }
+          return false;
+        })
         .map((p) => ({
           ...p,
           distance: getDistance(
@@ -429,9 +474,8 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     }
   }, [isLoaded, driverPos, driverParcels]);
 
-  // ---- follow the driver marker
   useEffect(() => {
-    if (!mapRef?.current || !driverPos) return;
+    if (!mapRef?.current || !driverPos || !selectedDriver?.id) return;
     const now = Date.now();
     if (!zoomLockedRef.current) {
       try {
@@ -452,7 +496,7 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
         console.error("map panTo failed:", err);
       }
     }
-  }, [driverPos, mapRef]);
+  }, [driverPos, mapRef, selectedDriver?.id]);
 
   const getDistance = (lat1, lng1, lat2, lng2) => {
     const R = 6371;
@@ -510,12 +554,11 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
 
   return (
     <Box sx={{ width: "100%", height: "100%", position: "relative" }}>
-      {/* Search bar */}
       <Box
         sx={{
           position: "absolute",
           top: 16,
-          left: 16,
+          left: "12%",
           display: "flex",
           gap: 1,
           zIndex: 1200,
@@ -555,24 +598,24 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
         )}
       </Box>
 
-      {/* Quick readout chip (driver speed) */}
       {driverPos ? (
         <Box
           sx={{
             position: "absolute",
             top: 16,
-            right: 16,
+            right: "50%",
             zIndex: 1200,
             bgcolor: "#fff",
             borderRadius: 2,
-            px: 1.5,
+            px: 2,
             py: 0.75,
             boxShadow: 3,
             fontWeight: 700,
-            color: driverSpeed > 0 ? "#29bf12" : "#7f8c8d",
+            color: !hasConnection ? "#f21b3f" : (driverSpeed > 0 ? "#29bf12" : "#7f8c8d"),
+            fontSize: "1.5rem"
           }}
         >
-          {driverSpeed} km/h
+          {!hasConnection ? "No Connection" : `${driverSpeed} km/h`}
         </Box>
       ) : null}
 
@@ -765,6 +808,20 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
             icon={{ url: deliverLogo, scaledSize: new window.google.maps.Size(40, 40) }}
           />
         )}
+        
+        {!selectedDriver?.id && userLocation && (
+          <Marker
+            position={userLocation}
+            icon={{
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: "#4285F4",
+              fillOpacity: 1,
+              strokeColor: "white",
+              strokeWeight: 2,
+            }}
+          />
+        )}
 
         {existingSlowdowns.map((zone, idx) => {
           if ((editMode && selectedIndex === idx) || addingSlowdown) return null;
@@ -859,24 +916,32 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
         )}
 
         {[...driverParcels]
-          .filter(
-            (p) =>
-              p.destination &&
-              typeof p.destination.latitude === "number" &&
-              typeof p.destination.longitude === "number"
-          )
-          .map((parcel, idx) => (
-            <Marker
-              key={`parcel-marker-${parcel.id || idx}`}
-              position={{ lat: parcel.destination.latitude, lng: parcel.destination.longitude }}
-              label={(idx + 1).toString()}
-              onClick={() =>
-                window.alert(
-                  `Parcel: ${parcel.packageId}\nRecipient: ${parcel.recipient}\nAddress: ${parcel.street} ${parcel.barangay} ${parcel.municipality} ${parcel.province}`
-                )
-              }
-            />
-          ))}
+          .map((parcel, idx) => {
+            const hasValidDestination = 
+              parcel.destination &&
+              typeof parcel.destination.latitude === "number" &&
+              typeof parcel.destination.longitude === "number";
+            
+            if (!hasValidDestination) {
+              console.warn("Skipping parcel with null destination:", parcel.id);
+              return null;
+            }
+            
+            return (
+              <Marker
+                key={`parcel-marker-${parcel.id || idx}`}
+                position={{ lat: parcel.destination.latitude, lng: parcel.destination.longitude }}
+                label={(idx + 1).toString()}
+                onClick={() =>
+                  window.alert(
+                    `Parcel: ${parcel.packageId}\nRecipient: ${parcel.recipient}\nAddress: ${parcel.street} ${parcel.barangay} ${parcel.municipality} ${parcel.province}`
+                  )
+                }
+              />
+            );
+          })
+          .filter(Boolean)
+        }
       </GoogleMap>
     </Box>
   );

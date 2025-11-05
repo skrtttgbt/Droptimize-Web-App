@@ -45,6 +45,7 @@ export const fetchAllParcels = async (uid = null) => {
         region: parcelData.region || "",
         dateAdded: parcelData.dateAdded?.toDate() || new Date(),
         userId: parcelData.uid || "",
+        destination: parcelData.destination || null,
       });
     }
 
@@ -131,7 +132,7 @@ export const addParcel = async (parcelData, uid) => {
       region: parcelData.region || "",
       dateAdded: parcelData.dateAdded || Timestamp.fromDate(now),
       createdAt: Timestamp.fromDate(now),
-      destination: parcelData.destination || "",
+      destination: parcelData.destination || { latitude: null, longitude: null },
     };
 
     const parcelDocRef = doc(db, "parcels", parcelId);

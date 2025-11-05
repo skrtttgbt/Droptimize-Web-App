@@ -78,7 +78,7 @@ function getDisplaySpeed(driver) {
   return null;
 }
 
-export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
+export default function DriverListPanel({ user, mapRef, onDriverSelect, selectedDriver }) {
   const [drivers, setDrivers] = useState([]);
   const [branchId, setBranchId] = useState(null);
   const [parcels, setParcels] = useState({});
@@ -257,6 +257,11 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
   };
 
   const handleFocusOnMap = (driver) => {
+    if (selectedDriver?.id === driver.id) {
+      onDriverSelect && onDriverSelect(null);
+      return;
+    }
+    
     if (!mapRef || !mapRef.current) return;
     const dl = getDriverLatLng(driver);
     if (!dl) return;
@@ -290,7 +295,8 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
                 mb: 2,
                 borderRadius: 2,
                 "&:before": { display: "none" },
-                bgcolor: isOverspeeding ? "#fff4f4" : "#f9f9f9",
+                bgcolor: isOverspeeding ? "#fff4f4" : (selectedDriver?.id === driver.id ? "#e3f2fd" : "#f9f9f9"),
+                border: selectedDriver?.id === driver.id ? "2px solid #00b2e1" : "none",
               }}
             >
               <AccordionSummary expandIcon={<ExpandMore />} sx={{ borderRadius: 2 }}>
@@ -351,10 +357,21 @@ export default function DriverListPanel({ user, mapRef, onDriverSelect }) {
 
                   {getDriverLatLng(driver) && (
                     <Grid>
-                      <Tooltip title="Focus on Map">
-                        <IconButton onClick={() => handleFocusOnMap(driver)}>
-                          <MyLocation />
-                        </IconButton>
+                      <Tooltip title={
+                        selectedDriver?.id === driver.id 
+                          ? "Deselect Driver" 
+                          : selectedDriver 
+                            ? "Deselect current driver first" 
+                            : "Focus on Map"
+                      }>
+                        <span>
+                          <IconButton 
+                            onClick={() => handleFocusOnMap(driver)} 
+                            disabled={selectedDriver !== null && selectedDriver?.id !== driver.id}
+                          >
+                            <MyLocation />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                     </Grid>
                   )}
