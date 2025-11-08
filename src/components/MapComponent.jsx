@@ -206,9 +206,13 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
       }
       return;
     }
+    
+    let isMounted = true;
+    
     const unsub = onSnapshot(
       doc(db, "users", selectedDriver.id),
       (snap) => {
+        if (!isMounted) return;
         if (!snap.exists()) return;
         const d = snap.data();
 
@@ -322,7 +326,11 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
       },
       (err) => console.error("onSnapshot(user) error:", err)
     );
-    return () => unsub();
+    
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [selectedDriver]);
 
   useEffect(() => {
@@ -377,6 +385,9 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     if (!selectedDriver) {
       return;
     }
+    
+    let isMounted = true;
+    
     const uidCandidates = [selectedDriver.id, selectedDriver.uid]
       .map((v) => (typeof v === "string" ? v.trim() : v))
       .filter(Boolean);
@@ -396,12 +407,17 @@ export default function MapComponent({ user, selectedDriver, mapRef }) {
     const unsub = onCollectionSnapshot(
       qy,
       (snapshot) => {
+        if (!isMounted) return;
         const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
         setDriverParcels(docs);
       },
       (err) => console.error("onSnapshot(parcels) error:", err)
     );
-    return () => unsub();
+    
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [selectedDriver?.id, selectedDriver?.uid]);
 
   useEffect(() => {
